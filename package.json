@@ -15,6 +15,7 @@
     "test:auth": "node test/auth.js",
     "test:teardown": "node test/teardown.js",
     "test:limits": "node test/limits.js",
+    "test:docs": "node test/docs.js",
     "test:multi": "node test/multi-session.js",
     "test:live": "node test/live-drive.js",
     "test:probe": "node test/robustness-probe.js"

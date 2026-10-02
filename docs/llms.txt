@@ -34,4 +34,4 @@ Chrome. No database, no volume, no build step, no dependencies in the client SDK
 ## Optional
 
 - [Demo](https://github.com/Spuds0588/Easy-Browser-as-a-Service#quickstart): `./install.sh`, then open `http://localhost:8080/demo.html`.
-- [Tests](https://github.com/Spuds0588/Easy-Browser-as-a-Service/blob/main/README.md#testing): `npm run test:auth`, `npm run test:teardown`, `npm run test:limits`, `npm test`, `npm run test:multi`, `npm run test:live`, `npm run test:probe`.
+- [Tests](https://github.com/Spuds0588/Easy-Browser-as-a-Service/blob/main/README.md#testing): `npm run test:auth`, `npm run test:teardown`, `npm run test:limits`, `npm run test:docs`, `npm test`, `npm run test:multi`, `npm run test:live`, `npm run test:probe`.

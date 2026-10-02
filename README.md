@@ -473,6 +473,12 @@ with the defaults under test — a second concurrent session from one IP refused
 filter allowing the fixture host while blocking a disallowed domain, `file://` and a redirect to a
 disallowed host.
 
+`npm run test:docs` runs `test/docs.js`: it loads `docs/index.html` in a real browser at fifteen
+widths from 1440px down to 320px and fails if the document scrolls sideways, if an internal `#anchor`
+has no matching `id`, if a copy button targets a missing block, or if any JSON-LD block does not
+parse. The page is hand-written HTML with inline CSS, so this is what keeps a copy edit from silently
+widening the layout.
+
 `npm test` runs `test/e2e.js`: it starts the service and two fixture origins, launches a real
 browser, and drives the product end to end — screencast frames painted to the canvas, mouse and
 keyboard passthrough, clipboard both ways, the upload and download bridges, deep-link resume,

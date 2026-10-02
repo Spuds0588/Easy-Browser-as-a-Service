@@ -218,6 +218,7 @@ curl -s localhost:8080/api/sessions     # who is connected, and for how long
 Test suites (need a browser to drive; system Chrome by default):
 
 ```bash
+npm run test:docs     # 22 checks: the landing page loads clean and never scrolls sideways
 npm test              # 22 checks: frames, input, clipboard, upload/download, resume, reaping
 npm run test:multi    # 23 checks: cross-session isolation, capacity, churn
 npm run test:live     # drives real external sites through the product
