@@ -87,7 +87,7 @@
             "@type": "HowToStep",
             "position": 2,
             "name": "Load the SDK from that service",
-            "text": "Add a single script tag pointing at the service: <script src=\"http://localhost:8080/sdk.js\"><\/script>. One file, served by the container itself.",
+            "text": "Add a single script tag pointing at the service: <script src=\"http://localhost:8080/sdk.js?token=ACCESS_TOKEN\"><\/script>. One file, served by the container itself. The short-lived token is minted from your server's signing key and is required before any browser session is opened.",
             "url": "https://spuds0588.github.io/Easy-Browser-as-a-Service/#embed"
           },
           {
@@ -142,16 +142,15 @@
             "name": "How many sessions can run at once?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "MAX_SESSIONS controls it and defaults to 8. Each session is one incognito browser context inside a single master Chromium process, so memory grows with sessions rather than with browser processes — budget roughly 1 GB of memory per concurrent session. A session beyond the limit is refused with \"Could not start session: capacity reached (N/N) — try again shortly\". To run more than one session on the same host page, give each <remote-browser> its own storage-key attribute."
+              "text": "MAX_SESSIONS controls it and defaults to 8. Each session is one incognito browser context inside a single master Chromium process, so memory grows with sessions rather than with browser processes — budget roughly 1 GB of memory per concurrent session. A session beyond the limit is refused with Could not start session: capacity reached (N/N) — try again shortly. To run more than one session on the same host page, give each <remote-browser> its own storage-key attribute."
             }
           },
           {
-            "@type": "Question",
-            "name": "Is it safe to expose the service to the internet?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Not as it ships: there is no authentication, so anything that can reach the port can open a session in a browser that runs on your network and can reach whatever that browser can reach. Put it behind a private network or an authenticated proxy, and restrict the egress of the container."
-            }
+            "@type": "Question",              "name": "Is it safe to expose the service to the internet?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Safer than it is often assumed to be, but still not a public sandbox. Every session needs a short-lived signed token minted from your server's RBAS_KEY, so an anonymous visitor cannot open a browser. But a token authorizes a caller, not a person, and the browser still runs on your network and can reach whatever it can reach. Keep token lifetimes short, mint tokens per user in your backend, and restrict the egress of the container."
+              }
           }
         ]
       }
@@ -767,9 +766,11 @@ cd Easy-Browser-as-a-Service
             <div class="step-num">2</div>
             <div>
               <h3>Load the SDK from that service</h3>
-              <pre><button class="copy" data-copy="s2" type="button">Copy</button><code id="s2">&lt;script src="http://localhost:8080/sdk.js"&gt;&lt;/script&gt;</code></pre>
+              <pre><button class="copy" data-copy="s2" type="button">Copy</button><code id="s2">&lt;script src="http://localhost:8080/sdk.js?token=ACCESS_TOKEN"&gt;&lt;/script&gt;</code></pre>
               <p class="note">
-                One file, served by the container itself. Point it at your own host in production.
+                One file, served by the container itself. Point it at your own host in production, and
+                mint the short-lived <code>token</code> from your server's signing key — the service
+                will not open a browser without one.
               </p>
             </div>
           </div>
@@ -815,6 +816,14 @@ console.log(rb.status);        <span class="c">// { ready, sessionId, url }</spa
             no WebRTC, no STUN/TURN, no per-user browser process.
           </p>
           <div class="cards four">
+            <div class="card">
+              <h3>Access control, built in</h3>
+              <p>
+                Every session needs a short-lived HMAC-signed token minted from your server's
+                <code>RBAS_KEY</code>, so an anonymous visitor cannot open a browser. Tokens gate
+                <code>/ws</code>, uploads and downloads directly — no reverse proxy required.
+              </p>
+            </div>
             <div class="card">
               <h3>Screencast, not video</h3>
               <p>
@@ -907,6 +916,7 @@ docker run -d --name rbas -p 8080:8080 \
               <li><b>Shared memory</b> <code>--shm-size=1gb</code> (512 MB minimum) or Chromium renderers crash.</li>
               <li><b>Writable /tmp</b> the upload/download bridge lives there and cleans up after itself.</li>
               <li><b>Healthcheck</b> <code>GET /healthz</code>; the image declares it already.</li>
+              <li><b>Access tokens</b> sessions need a short-lived token signed with <code>RBAS_KEY</code>; unset, the service generates and logs one at boot.</li>
               <li><b>Memory</b> budget roughly 1 GB per concurrent session; <code>MAX_SESSIONS</code> defaults to 8.</li>
               <li><b>TLS</b> terminate at your proxy — the SDK upgrades to <code>wss://</code> from the origin you give it.</li>
               <li><b>Scaling</b> scale to zero freely; multiple replicas need sticky routing on <code>/ws</code> to keep resume working.</li>
@@ -923,11 +933,11 @@ docker run -d --name rbas -p 8080:8080 \
           </p>
           <div class="cards three">
             <div class="card">
-              <h3>It has no authentication</h3>
+              <h3>Secure, but not a sandbox</h3>
               <p>
-                Anything that can reach the port can open a session, so put it behind auth you already
-                trust — a private network, an authenticated proxy. The browser also runs on your
-                network, so restrict what it can reach.
+                A token authenticates a caller, not a person, and it is checked when a session starts
+                rather than continuously. The browser also runs on your network, so keep token
+                lifetimes short, mint them per user, and restrict what the container can reach.
               </p>
             </div>
             <div class="card">
@@ -1010,10 +1020,12 @@ docker run -d --name rbas -p 8080:8080 \
             <div class="faq-item">
               <h3>Is it safe to expose the service to the internet?</h3>
               <p>
-                Not as it ships: there is no authentication, so anything that can reach the port can
-                open a session in a browser that runs on your network and can reach whatever that
-                browser can reach. Put it behind a private network or an authenticated proxy, and
-                restrict the egress of the container.
+                Safer than it is often assumed to be, but still not a public sandbox. Every session
+                needs a short-lived signed token minted from your server's <code>RBAS_KEY</code>, so
+                an anonymous visitor cannot open a browser. But a token authorizes a caller, not a
+                person, and the browser still runs on your network and can reach whatever it can
+                reach. Keep token lifetimes short, mint tokens per user in your backend, and restrict
+                the egress of the container.
               </p>
             </div>
           </div>

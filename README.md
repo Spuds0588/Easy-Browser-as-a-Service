@@ -7,9 +7,13 @@ target application refuses to be framed (blocking `X-Frame-Options` / CSP), when
 `localStorage` collide with your own, or when you cannot reach it from the browser at all (CORS).
 
 ```html
-<script src="https://browser.your-company.com/sdk.js"></script>
+<script src="https://browser.your-company.com/sdk.js?token=SHORT_LIVED_TOKEN"></script>
 <remote-browser src="https://legacy-crm.internal" style="display:block;width:100%;height:700px"></remote-browser>
 ```
+
+The `token` is a short-lived access token minted from your server's signing key — the service will
+not open a browser for anyone without one. See [Access control](#access-control); `install.sh` and
+the bundled demo page mint a token for you automatically.
 
 The remote session is rendered as JPEG frames over a WebSocket and lives in an isolated
 incognito browser context on the server. The server itself is **stateless**: session state
@@ -19,6 +23,7 @@ session instead of logging the user out.
 
 - [Quickstart](#quickstart)
 - [`<remote-browser>` reference](#remote-browser-reference)
+- [Access control](#access-control)
 - [Configuration reference](#configuration-reference)
 - [HTTP and WebSocket endpoints](#http-and-websocket-endpoints)
 - [Session, Chrome and reaping model](#session-chrome-and-reaping-model)
@@ -162,6 +167,59 @@ Notes: state is keyed by host `localStorage`, so a sandboxed/opaque origin (for 
 `srcdoc` iframe or `file://`) cannot persist a session. On resume the live context is authoritative —
 the server pushes its state back to the host rather than replaying stale host state.
 
+## Access control
+
+The service ships with authentication built in. One long-lived **signing key** stays on the server
+and browsers only ever receive short-lived **tokens** signed with it, so a token scraped out of a
+page expires on its own and can never be replayed as the key. Verification is stateless — no token
+store, no database — so it fits the rest of the design.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `RBAS_KEY` | generated at boot & logged | HMAC signing key for access tokens. Set it (`openssl rand -base64 32`) so tokens stay valid across restarts. |
+| `RBAS_TOKEN_TTL_MS` | `3600000` (1 h) | Default token lifetime; `/api/token` and `server/token.js` can request a shorter one. |
+
+If `RBAS_KEY` is unset the service generates one and prints it once at boot — handy for a quick
+look, but every restart invalidates outstanding tokens. A token gates **establishing** a session;
+once a socket is up it stays up, so a short TTL never kills a long-running session.
+
+Mint a token one of three ways:
+
+1. **Ask the service** — no crypto on your side:
+   ```bash
+   curl -sX POST -H "Authorization: Bearer $RBAS_KEY" \
+     "https://your-server/api/token?ttl=15m&sub=alice"
+   # {"token":"v1.…","expiresAt":1699999999999}
+   ```
+2. **From the CLI** — `RBAS_KEY=… node server/token.js --ttl 15m --sub alice`
+3. **In your own backend** — sign `v1.<base64url({iat,exp,sub})>` with HMAC-SHA256 under the same key.
+
+Because tokens are short-lived, mint one as the page loads rather than baking it into static HTML:
+
+```html
+<script>
+  fetch('https://your-backend/rbas-token').then((r) => r.json()).then(({ token }) => {
+    const s = document.createElement('script');
+    s.src = `https://your-server/sdk.js?token=${encodeURIComponent(token)}`;
+    document.head.append(s);
+  });
+</script>
+<remote-browser src="https://legacy-crm.internal" style="height:700px"></remote-browser>
+```
+
+The SDK reads `?token=` off its own `<script>` URL and carries it into the WebSocket `init`, the
+upload request and the download link. What is guarded, and what is deliberately not:
+
+| Route | Token required | Why |
+| --- | --- | --- |
+| `GET /sdk.js`, `GET /demo.html`, `GET /healthz` | no | Assets and the container probe must load before any session exists; `/demo.html` gets a working token injected for you. |
+| `POST /api/token` | the **master key** | Server-to-server exchange: master key in, short-lived token out. |
+| `WS /ws` | yes — in the first `init` message | A browser WebSocket cannot send headers, and `init` is already the first frame. |
+| `GET /api/sessions`, `POST /upload`, `GET /download/:id` | yes | `Authorization: Bearer …`, or `?token=…` on a download link (a click navigation cannot set headers). |
+
+Unauthorized requests get a `401` (or a `1008` WebSocket close) and never allocate a browser context.
+See [docs/SECURITY.md](docs/SECURITY.md) for what this does and does not protect against.
+
 ## Configuration reference
 
 Everything is environment variables with the defaults below; the Docker image, `docker-compose.yml`
@@ -221,6 +279,7 @@ All HTTP responses carry `Access-Control-Allow-Origin: *` so the SDK works from 
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| `POST` | `/api/token` | Exchange the master key (`Authorization: Bearer $RBAS_KEY`) for a short-lived access token. Guarded by the key, not a token. |
 | `GET` | `/healthz` | Liveness/readiness probe: `{ok, uptime, sessions:{active,max}, browser:{connected,version}, tmp}`. Also used by the image's `HEALTHCHECK`. |
 | `GET` | `/api/sessions` | Debug/ops view of live sessions: `{active, max, items:[{id,url,visible,idleMs}]}`. |
 | `POST` | `/upload?name=<filename>` | Raw request body is stored in the container's tmp dir; returns `{id, filename, bytes}`. Used by the SDK's upload bridge. |
@@ -299,6 +358,10 @@ pass the matching host port to `install.sh --port` (compose publishes `${PORT:-8
 opaque origin cannot persist a session) and that the reload happened within `RECONNECT_GRACE_MS`.
 
 ## Testing
+
+`npm run test:auth` runs `test/auth.js`: an in-process matrix over the token signer (accept,
+tamper, expiry, wrong key, master-key check) plus an integration pass against a running server —
+the HTTP guards, the `/api/token` exchange, the demo-token injection and the WebSocket `init` gate.
 
 `npm test` runs `test/e2e.js`: it starts the service and two fixture origins, launches a real
 browser, and drives the product end to end — screencast frames painted to the canvas, mouse and

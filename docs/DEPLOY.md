@@ -20,7 +20,8 @@ HTTP and WebSocket traffic. There is nothing to provision: no database, no volum
 | **WebSocket upgrade pass-through** | The entire session runs over `/ws`. A proxy that buffers or strips upgrades breaks it. |
 | Shared memory: `--shm-size=1gb` (512 MB minimum) | Chromium's renderers crash with the default 64 MB `/dev/shm`. |
 | Writable tmp (`/tmp`) | The upload/download bridge writes under `RBAS_TMP_DIR` (`/tmp/rbas`). |
-| Healthcheck `GET /healthz` | Liveness/readiness; the image already declares `HEALTHCHECK`. |
+| Healthcheck `GET /healthz` | Liveness/readiness; the image already declares `HEALTHCHECK`. `/healthz` is left unauthenticated for exactly this reason. |
+| An `RBAS_KEY` secret | Signs the access tokens every session needs. Unset, the service generates one at boot and logs it (tokens then die with the process). Store it as a real secret. |
 | ~1 GB RAM per running session, plus Chrome's own footprint | Each session is an incognito context inside one master Chromium. |
 | No persistent volume | Sessions and tmp files are ephemeral by design. |
 
@@ -36,6 +37,7 @@ docker run -d --name rbas \
   -p 8080:8080 \
   --shm-size=1gb \
   -e MAX_SESSIONS=8 \
+  -e RBAS_KEY="$(openssl rand -base64 32)" \
   easy-browser-as-a-service
 ```
 
@@ -45,6 +47,16 @@ Check it:
 docker logs rbas                 # [BOOT] master browser launched … chrome=/home/pptruser/.cache/…
 curl -s localhost:8080/healthz
 curl -s -o /dev/null -w '%{http_code}\n' localhost:8080/sdk.js   # 200
+```
+
+Then mint an access token from the same key and hand it to the page (see the README's
+[Access control](https://github.com/Spuds0588/Easy-Browser-as-a-Service/blob/main/README.md#access-control)
+section for the full picture):
+
+```bash
+RBAS_KEY=<the key you passed above> node server/token.js --ttl 15m
+# or, without a local checkout, server-to-server:
+curl -sX POST -H "Authorization: Bearer $RBAS_KEY" "http://localhost:8080/api/token?ttl=15m"
 ```
 
 To let the remote browser reach a service running on the Docker *host* (handy when you are testing
@@ -77,6 +89,14 @@ docker compose down
 host port 9000 while the container keeps listening on 8080. It sets `shm_size: 1gb`,
 `extra_hosts: host.docker.internal:host-gateway`, `restart: unless-stopped` and the deployment
 defaults for `MAX_SESSIONS`, the timeouts and the screencast size.
+
+Pass `RBAS_KEY` to compose and `install.sh` will generate one for you if you do not:
+
+```bash
+RBAS_KEY=$(openssl rand -base64 32) docker compose up -d --build
+```
+
+The key signs access tokens — keep it out of `docker-compose.yml` itself and out of source control.
 
 Wait for the health check before pointing users at it:
 
@@ -166,8 +186,9 @@ Terminate TLS in front of the service (Fly, Caddy, nginx, an ALB). Two things mu
 
 The SDK builds its WebSocket URL from the `server` origin by replacing the scheme
 (`http→ws`, `https→wss`), so a page served over HTTPS talking to an HTTPS service needs no extra
-configuration. There is no authentication in the service itself — see
-[SECURITY.md](SECURITY.md) before exposing it to the internet.
+configuration. Access control is built in — sessions need a short-lived token signed with `RBAS_KEY`
+— but a token is not a substitute for a network boundary: see [SECURITY.md](SECURITY.md) before
+exposing it to the internet, and read the README's Access control section for minting.
 
 > **Untested.** TLS termination and public-URL access were never exercised in this repo's testing;
 > only plain-HTTP local container access was verified.

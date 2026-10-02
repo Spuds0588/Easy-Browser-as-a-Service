@@ -3,29 +3,44 @@
 This service gives whoever can reach it a real browser on your network, driven on their behalf.
 Read this before exposing `PORT` to an untrusted network.
 
-## The service has no authentication
+## Authentication
 
-There is no login, API key, token or origin check anywhere in the request path. Anything that can
-open a TCP connection to `PORT` can:
+Access is gated by short-lived HMAC-signed tokens, whose signing key is `RBAS_KEY`. Anything that can
+open a TCP connection to `PORT` still reaches the open routes, but it can no longer start a session:
 
-- open a session (`POST`-less: the first WebSocket message `init` is all it takes),
-- drive that browser to any URL (`init.url`, or `navigate` at any time),
-- fetch files that other users' downloads left behind **if** it can guess a download id,
-- upload files up to `MAX_UPLOAD`.
+- `WS /ws` rejects an `init` without a valid token (close code `1008`) **before** any browser context
+  is created, so an unauthenticated peer cannot cost you a Chromium.
+- `/api/sessions`, `POST /upload` and `GET /download/:id` all require a token.
+- `/api/token` requires the master signing key itself.
+- `/healthz`, `/sdk.js` and `/demo.html` are open: the container probe and a cross-origin asset load
+  must work before any session exists.
 
-Put it behind authentication you already trust — an authenticated reverse proxy, a VPN, a private
-network, an identity-aware proxy, or a signed short-lived token in front of both `/ws` and the HTTP
-routes. The SDK has no notion of credentials, so fronting it is the intended pattern.
+What this does **not** do:
+
+- It authenticates the *token*, not the *person*. Anyone holding a valid token — including anyone who
+  can read it out of the embedding page — can drive a browser to any URL. Keep TTLs short and mint
+  per-user tokens in your own backend.
+- A token is checked when a session is **established**, not continuously, so a leaked token can be
+  replayed for as long as the session it opened stays open.
+- There is no per-token or per-IP rate limit. A valid token can hold `MAX_SESSIONS` sessions open in a
+  loop, and can hammer `/api/token` without limit.
+- The signing key is the whole ballgame: whoever holds `RBAS_KEY` can mint tokens. Store it as a
+  secret, never ship it to a browser, and rotate it by restarting with a new value (which invalidates
+  outstanding tokens).
+
+Per-user identity, quotas and audit trails still belong in a reverse proxy in front of the service.
 
 ## Server-side request forgery
 
 The remote browser runs **inside your infrastructure**, so it can reach anything that network can
 reach: internal admin panels, databases, `169.254.169.254` cloud metadata, `localhost` services.
-Combined with the missing authentication that is a full SSRF primitive.
+Authentication limits *who* can open a session, but it does not change *what that session can
+reach* — for anyone holding a valid token, a session is still a full SSRF primitive.
 
 Mitigations, in rough order of strength:
 
-- Never expose the service to the public internet without auth in front of it.
+- Treat every token holder as able to reach anything the browser can reach: mint tokens only for
+  people you trust with that reach.
 - Restrict the container's egress (network policy, egress proxy, or a private subnet) so the browser
   can only reach the applications you intend to embed.
 - Keep the container away from sensitive networks and strip cloud metadata access
@@ -36,10 +51,11 @@ Mitigations, in rough order of strength:
 Every HTTP route sets `Access-Control-Allow-Origin: *` (and answers `OPTIONS` with `204`) so the SDK
 can be embedded from any origin. Consequences to be aware of:
 
-- Any web page a user visits can `POST /upload` to your service and `GET /download/:id` (given the
-  id), and can read `/healthz` and `/api/sessions`.
-- `/api/sessions` discloses live session ids and the URLs they are showing. Session ids are random
-  (`sess_` + 16 hex chars) but they are not secrets you should rely on.
+- Any web page can read `/healthz` and load `/sdk.js`, and can *attempt* `POST /api/token` or
+  `/upload` — but without the master key or a valid token those are `401`. CORS openness no longer
+  implies access, because every sensitive route is token-gated.
+- `/healthz` stays world-readable (uptime, session count, browser version) — keep that in mind if you
+  consider any of it sensitive.
 
 If you need to narrow this, restrict the origin at your proxy or reverse proxy rather than in the
 app, and keep `/ws` and `/upload` on the same origin policy.
@@ -103,6 +119,6 @@ server's 64 MB frame cap. If you run this multi-tenant, add rate limiting and au
 These areas were **not** exercised in this repo's testing and must not be assumed safe:
 
 - Deployment behind TLS or on a public URL (only local plain-HTTP containers were tested).
-- Any authentication or rate-limiting layer.
+- Rate limiting (there is none built in).
 - Concurrent load / multi-tenant behaviour; the e2e suite drives one session at a time.
 - Fly.io deployment (`fly.toml` is configuration, not a verified deployment).

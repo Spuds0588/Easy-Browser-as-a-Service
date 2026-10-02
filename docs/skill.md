@@ -46,7 +46,9 @@ curl -s localhost:8080/healthz
 ```
 
 ```html
-<script src="http://localhost:8080/sdk.js"></script>
+<!-- Token first: without one the service refuses to open a session. The demo
+     page at /demo.html has one injected for you. -->
+<script src="http://localhost:8080/sdk.js?token=SHORT_LIVED_TOKEN"></script>
 <remote-browser
   src="https://legacy-crm.internal"
   server="http://localhost:8080"
@@ -68,6 +70,11 @@ Vanilla Custom Element with Shadow DOM, no framework and no build step.
 | `src` | — | URL to open. Changing it after `ready` navigates the remote browser. |
 | `server` | origin the SDK was loaded from | Service origin. Connects to `<server>/ws`. |
 | `storage-key` | `rbas:session` | Host `localStorage` key holding `{sessionId, url, localStorage, cookies}`. Use a distinct key per session on one host origin. |
+
+The access token is **not** an attribute: append it to the SDK's own script URL
+(`<script src="…/sdk.js?token=…">`) and the element picks it up. Mint tokens from the server's
+signing key — `curl -X POST -H "Authorization: Bearer $RBAS_KEY" '<origin>/api/token?ttl=15m'`,
+`node server/token.js --ttl 15m`, or HMAC-SHA256 in your own backend.
 
 ### Methods and properties
 
@@ -105,26 +112,29 @@ button), not as events. The element logs `[SDK] …` lines to the console.
   `/upload`, and the stored file is handed to the waiting remote input under its original filename.
 - **Downloads** — captured in the container, exposed briefly at `/download/:id`, then triggered on the
   host page as a normal download.
-- **No authentication.** Anything that can reach the port can open a session. Put it behind a private
-  network or an authenticated proxy, and restrict what the browser can reach.
+- **Authentication is built in.** A session needs a short-lived HMAC token signed with `RBAS_KEY`;
+  the WebSocket `init` and the sensitive HTTP routes reject anything else. A token is checked when the
+  session is *established*, not continuously, and it authorizes the caller — not a person. See
+  `docs/SECURITY.md`.
 
 ## HTTP and WebSocket endpoints
 
 All HTTP responses send `Access-Control-Allow-Origin: *`; `OPTIONS` returns `204`.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/healthz` | `{ok, uptime, sessions:{active,max}, browser:{connected,version}, tmp}` |
-| `GET` | `/api/sessions` | `{active, max, items:[{id,url,visible,idleMs}]}` |
-| `POST` | `/upload?name=<filename>` | Raw body stored in tmp; returns `{id, filename, bytes}` |
-| `GET` | `/download/:id` | Captured download as an attachment, until `FILE_TTL_MS` |
-| `GET` | `/sdk.js` | The web component |
-| `GET` | `/demo.html` | Working demo harness (accepts `?src=`) |
-| `GET` | `/` | `302` → `/demo.html` |
-| `GET` | `/ws` | WebSocket session channel (must survive proxy upgrades) |
+| Method | Path | Token | Purpose |
+| --- | --- | --- | --- |
+| `POST` | `/api/token?ttl=&sub=` | master key | Exchange `Authorization: Bearer $RBAS_KEY` for `{token, expiresAt}` |
+| `GET` | `/healthz` | open | `{ok, uptime, sessions:{active,max}, browser:{connected,version}, tmp}` |
+| `GET` | `/api/sessions` | required | `{active, max, items:[{id,url,visible,idleMs}]}` |
+| `POST` | `/upload?name=<filename>` | required | Raw body stored in tmp; returns `{id, filename, bytes}` |
+| `GET` | `/download/:id` | required (`?token=`) | Captured download as an attachment, until `FILE_TTL_MS` |
+| `GET` | `/sdk.js` | open | The web component |
+| `GET` | `/demo.html` | open (token injected) | Working demo harness (accepts `?src=`) |
+| `GET` | `/` | open | `302` → `/demo.html` |
+| `GET` | `/ws` | required in `init` | WebSocket session channel (must survive proxy upgrades) |
 
 Wire protocol if you write your own client — the **first** message on a socket must be `init`.
-Client→server: `init {url, sessionId, viewport, state, config}`, `navigate`, `mouse`, `wheel`, `key`,
+Client→server: `init {token, url, sessionId, viewport, state, config}`, `navigate`, `mouse`, `wheel`, `key`,
 `clipboard`, `paste`, `resize`, `visibility`, `upload:result`, `ping`.
 Server→client: `ready`, `frame`, `url`, `state`, `clipboard`, `upload:request`, `download`, `error`,
 `expired`, `pong`.
@@ -135,6 +145,8 @@ Server→client: `ready`, `frame`, `url`, `state`, `clipboard`, `upload:request`
 | --- | --- | --- |
 | `PORT` | `8080` | HTTP/WebSocket port |
 | `HOST` | `0.0.0.0` | Listen address |
+| `RBAS_KEY` | generated at boot & logged | HMAC signing key for access tokens; set it for stable tokens |
+| `RBAS_TOKEN_TTL_MS` | `3600000` | Default token lifetime |
 | `MAX_SESSIONS` | `8` | Concurrent sessions; further `init`s are refused |
 | `RECONNECT_GRACE_MS` | `60000` | How long a dropped session's context is kept for resume |
 | `IDLE_TIMEOUT_MS` | `600000` | No input on a connected session → reaped |
