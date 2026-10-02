@@ -19,6 +19,13 @@ services:
       # for stable tokens; if empty the service generates one at boot.
       RBAS_KEY: "${RBAS_KEY:-}"
       RBAS_TOKEN_TTL_MS: "3600000"
+      # No-backend pages: allow-list who may mint for themselves. Leave both
+      # empty and the master key is the only way in.
+      RBAS_TRUSTED_ORIGINS: "${RBAS_TRUSTED_ORIGINS:-}"
+      RBAS_TRUSTED_NETWORKS: "${RBAS_TRUSTED_NETWORKS:-}"
+      # Set to the number of trusted proxy hops when running behind one, or the
+      # network allow-list above sees the proxy's address instead of the client's.
+      RBAS_TRUST_PROXY: "${RBAS_TRUST_PROXY:-0}"
       MAX_SESSIONS: "8"
       IDLE_TIMEOUT_MS: "600000"
       HIDDEN_TIMEOUT_MS: "180000"

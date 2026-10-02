@@ -22,6 +22,7 @@ HTTP and WebSocket traffic. There is nothing to provision: no database, no volum
 | Writable tmp (`/tmp`) | The upload/download bridge writes under `RBAS_TMP_DIR` (`/tmp/rbas`). |
 | Healthcheck `GET /healthz` | Liveness/readiness; the image already declares `HEALTHCHECK`. `/healthz` is left unauthenticated for exactly this reason. |
 | An `RBAS_KEY` secret | Signs the access tokens every session needs. Unset, the service generates one at boot and logs it (tokens then die with the process). Store it as a real secret. |
+| `RBAS_TRUSTED_ORIGINS` + `RBAS_TRUSTED_NETWORKS` (optional) | Only if you embed from a page that has no backend: they let that origin mint a token for itself. The network half is what constrains a non-browser client. Must be paired with `RBAS_TRUST_PROXY` when a proxy sits in front. |
 | ~1 GB RAM per running session, plus Chrome's own footprint | Each session is an incognito context inside one master Chromium. |
 | No persistent volume | Sessions and tmp files are ephemeral by design. |
 
@@ -186,7 +187,13 @@ Terminate TLS in front of the service (Fly, Caddy, nginx, an ALB). Two things mu
 
 The SDK builds its WebSocket URL from the `server` origin by replacing the scheme
 (`http→ws`, `https→wss`), so a page served over HTTPS talking to an HTTPS service needs no extra
-configuration. Access control is built in — sessions need a short-lived token signed with `RBAS_KEY`
+configuration.
+
+If you use `RBAS_TRUSTED_NETWORKS`, set **`RBAS_TRUST_PROXY`** to the exact number of proxy hops you
+control. Without it every request looks like it came from the proxy; set too high and a client can
+spoof `X-Forwarded-For` and appear to be on a trusted network, which defeats the check entirely.
+
+Access control is built in — sessions need a short-lived token signed with `RBAS_KEY`
 — but a token is not a substitute for a network boundary: see [SECURITY.md](SECURITY.md) before
 exposing it to the internet, and read the README's Access control section for minting.
 

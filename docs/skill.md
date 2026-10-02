@@ -82,6 +82,7 @@ signing key — `curl -X POST -H "Authorization: Bearer $RBAS_KEY" '<origin>/api
 | --- | --- |
 | `el.navigate(url)` | Navigate the remote session and remember the URL for resume. |
 | `el.reload()` | Re-navigate to the current `src`, or the remembered URL. |
+| `el.endSession(reason?)` | End the remote session now — sends `close`, clears the remembered session id, stops reconnecting, fires `ended`. Returns whether a session was attached. |
 | `el.status` | `{ ready, sessionId, url }`. |
 | `el.sessionId` | `sess_…` or `null`. |
 | `el.lastClipboard` | Last text copied out of the remote page. |
@@ -95,6 +96,7 @@ signing key — `curl -X POST -H "Authorization: Bearer $RBAS_KEY" '<origin>/api
 | `clipboard` | `{ text }` | The remote page copied text. |
 | `download` | `{ url, filename }` | A remote download finished and was triggered on the host page. |
 | `expired` | `{ reason }` | The server reaped the session (idle, hidden or disconnect grace). |
+| `ended` | `{ reason }` | The session was closed on purpose — `endSession()`, or the server at your request. No reconnect follows. |
 
 Connection and server errors are shown in the element's built-in overlay (with a **Reload session**
 button), not as events. The element logs `[SDK] …` lines to the console.
@@ -116,6 +118,9 @@ button), not as events. The element logs `[SDK] …` lines to the console.
   the WebSocket `init` and the sensitive HTTP routes reject anything else. A token is checked when the
   session is *established*, not continuously, and it authorizes the caller — not a person. See
   `docs/SECURITY.md`.
+- **Teardown is on demand too.** `el.endSession()` (or the `close` message, or
+  `DELETE /api/sessions/:id`) ends a session immediately instead of waiting out the reconnect grace,
+  the idle timeout, or the hidden-tab timeout.
 
 ## HTTP and WebSocket endpoints
 
@@ -123,9 +128,10 @@ All HTTP responses send `Access-Control-Allow-Origin: *`; `OPTIONS` returns `204
 
 | Method | Path | Token | Purpose |
 | --- | --- | --- | --- |
-| `POST` | `/api/token?ttl=&sub=` | master key | Exchange `Authorization: Bearer $RBAS_KEY` for `{token, expiresAt}` |
+| `POST` | `/api/token?ttl=&sub=` | master key, or trusted origin+network | Mint `{token, expiresAt}`. Either present `Authorization: Bearer $RBAS_KEY`, or call it from an origin in `RBAS_TRUSTED_ORIGINS` (a no-backend page minting for itself) |
 | `GET` | `/healthz` | open | `{ok, uptime, sessions:{active,max}, browser:{connected,version}, tmp}` |
 | `GET` | `/api/sessions` | required | `{active, max, items:[{id,url,visible,idleMs}]}` |
+| `DELETE` | `/api/sessions/:id` | required | End one session immediately, skipping the reconnect grace; `404` if it is gone |
 | `POST` | `/upload?name=<filename>` | required | Raw body stored in tmp; returns `{id, filename, bytes}` |
 | `GET` | `/download/:id` | required (`?token=`) | Captured download as an attachment, until `FILE_TTL_MS` |
 | `GET` | `/sdk.js` | open | The web component |
@@ -135,9 +141,9 @@ All HTTP responses send `Access-Control-Allow-Origin: *`; `OPTIONS` returns `204
 
 Wire protocol if you write your own client — the **first** message on a socket must be `init`.
 Client→server: `init {token, url, sessionId, viewport, state, config}`, `navigate`, `mouse`, `wheel`, `key`,
-`clipboard`, `paste`, `resize`, `visibility`, `upload:result`, `ping`.
+`clipboard`, `paste`, `resize`, `visibility`, `upload:result`, `ping`, `close {reason?}` (end now, no grace).
 Server→client: `ready`, `frame`, `url`, `state`, `clipboard`, `upload:request`, `download`, `error`,
-`expired`, `pong`.
+`expired`, `closed`, `pong`.
 
 ## Configuration (environment variables)
 
@@ -147,6 +153,10 @@ Server→client: `ready`, `frame`, `url`, `state`, `clipboard`, `upload:request`
 | `HOST` | `0.0.0.0` | Listen address |
 | `RBAS_KEY` | generated at boot & logged | HMAC signing key for access tokens; set it for stable tokens |
 | `RBAS_TOKEN_TTL_MS` | `3600000` | Default token lifetime |
+| `RBAS_TRUSTED_ORIGINS` | — | Origins that may mint a token for themselves (no-backend pages) |
+| `RBAS_TRUSTED_NETWORKS` | — | IPs/CIDRs those origins must connect from; without it `Origin` alone is forgeable |
+| `RBAS_BROWSER_TOKEN_TTL_MS` | `900000` | Ceiling on trusted-origin tokens |
+| `RBAS_TRUST_PROXY` | `0` | Trusted proxy hops, for the IP allow-list behind a proxy |
 | `MAX_SESSIONS` | `8` | Concurrent sessions; further `init`s are refused |
 | `RECONNECT_GRACE_MS` | `60000` | How long a dropped session's context is kept for resume |
 | `IDLE_TIMEOUT_MS` | `600000` | No input on a connected session → reaped |

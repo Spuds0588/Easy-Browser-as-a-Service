@@ -11,7 +11,8 @@ open a TCP connection to `PORT` still reaches the open routes, but it can no lon
 - `WS /ws` rejects an `init` without a valid token (close code `1008`) **before** any browser context
   is created, so an unauthenticated peer cannot cost you a Chromium.
 - `/api/sessions`, `POST /upload` and `GET /download/:id` all require a token.
-- `/api/token` requires the master signing key itself.
+- `/api/token` requires either the master signing key, or a request from a trusted origin **and** a trusted network (see below).
+- `DELETE /api/sessions/:id` requires a token and ends one session immediately.
 - `/healthz`, `/sdk.js` and `/demo.html` are open: the container probe and a cross-origin asset load
   must work before any session exists.
 
@@ -29,6 +30,29 @@ What this does **not** do:
   outstanding tokens).
 
 Per-user identity, quotas and audit trails still belong in a reverse proxy in front of the service.
+
+## Letting a page with no backend mint for itself
+
+`RBAS_TRUSTED_ORIGINS` (plus `RBAS_TRUSTED_NETWORKS`) lets a browser mint its own token, so a static
+site or a packaged Electron/Tauri app needs no server of its own. Be precise about which half of that
+pair does the work:
+
+- The **`Origin` check is a web control, not a cryptographic one.** Browsers set `Origin` and page
+  JavaScript cannot forge it, which stops other *websites*. It does not stop a non-browser client:
+  anything that can open a TCP connection can send `Origin: https://app.example.com`.
+- The **network check is what constrains that client.** Until `RBAS_TRUSTED_NETWORKS` is set, the
+  trusted-origin path is effectively an open mint endpoint for anyone who can reach the port and
+  knows one of the allowed origins. The service logs a warning at boot when only origins are set.
+- Both are exact-match allow-lists. Keep them as narrow as the deployment allows, and keep a network
+  boundary you control in front of the service regardless — that is the control doing the real work.
+
+Tokens minted this way are capped at `RBAS_BROWSER_TOKEN_TTL_MS` (15 min by default) and carry
+`sub: origin:<origin>`, so they are easy to spot and short-lived by construction. The master key is
+unaffected and still mints with any TTL.
+
+Behind a reverse proxy the socket address belongs to the proxy, so `RBAS_TRUST_PROXY` must be set to
+the number of hops you actually trust. Set it too high and a client can spoof `X-Forwarded-For` to
+look like it came from a trusted network — which is the whole check.
 
 ## Server-side request forgery
 

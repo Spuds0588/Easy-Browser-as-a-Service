@@ -12,6 +12,10 @@ primary_region = "iad"
   RBAS_TOKEN_TTL_MS = "3600000"
   # Set the signing key as a secret, never in this file:
   #   fly secrets set RBAS_KEY=$(openssl rand -base64 32)
+  # For pages with no backend, allow-list who may mint for themselves. Prefer
+  # fly secrets; RBAS_TRUSTED_NETWORKS needs the private network CIDR.
+  #   fly secrets set RBAS_TRUSTED_ORIGINS=https://app.example.com
+  #   fly secrets set RBAS_TRUSTED_NETWORKS=10.0.0.0/8
   # 2GB of RAM must host one Chrome plus every incognito context in it.
   MAX_SESSIONS = "4"
   # Aggressive reaping keeps serverless containers cheap.

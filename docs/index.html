@@ -87,7 +87,7 @@
             "@type": "HowToStep",
             "position": 2,
             "name": "Mint a token, then load the SDK",
-            "text": "Mint a short-lived token server-side by exchanging your signing key at POST /api/token, or sign one yourself with HMAC-SHA256. Then load the SDK with it: <script src=\"http://localhost:8080/sdk.js?token=ACCESS_TOKEN\"><\/script>, one file served by the container itself. The service opens no browser without a valid token, and tokens expire, so mint one per page load rather than hard-coding it.",
+            "text": "Mint a short-lived token server-side by exchanging your signing key at POST /api/token, or sign one yourself with HMAC-SHA256. Then load the SDK with it: <script src=\"http://localhost:8080/sdk.js?token=ACCESS_TOKEN\"><\/script>, one file served by the container itself. The service opens no browser without a valid token, and tokens expire, so mint one per page load rather than hard-coding it. With no backend, allow-list the page with RBAS_TRUSTED_ORIGINS and RBAS_TRUSTED_NETWORKS instead and omit the token: the element asks the service for one itself.",
             "url": "https://spuds0588.github.io/Easy-Browser-as-a-Service/#embed"
           },
           {
@@ -799,6 +799,24 @@ curl -sX POST -H "Authorization: Bearer $RBAS_KEY" \
                 or your own HMAC-SHA256) and inject the tag at runtime rather than pasting it into the
                 HTML. The bundled demo page at <code>/demo.html</code> already gets one injected for you.
               </p>
+              <p class="note" style="margin-top: 20px">
+                <b>No backend at all?</b> A static page or a packaged app has nothing to mint with.
+                Allow-list its origin and its network instead, drop the token from the script URL, and
+                the element asks the service for one itself:
+              </p>
+              <pre><button class="copy" data-copy="s2c" type="button">Copy</button><code id="s2c"><span class="c"># the service itself: allow-list who may ask</span>
+RBAS_TRUSTED_ORIGINS=https://app.example.com
+RBAS_TRUSTED_NETWORKS=10.0.0.0/8
+
+<span class="c">&lt;!-- no ?token= : the element mints its own --&gt;</span>
+&lt;script src="https://browser.your-company.com/sdk.js"&gt;&lt;/script&gt;</code></pre>
+              <p class="note">
+                Both halves matter. <code>RBAS_TRUSTED_ORIGINS</code> stops other <i>websites</i> —
+                a browser sets <code>Origin</code> and page JavaScript cannot forge it.
+                <code>RBAS_TRUSTED_NETWORKS</code> stops everyone else: <code>Origin</code> is not a
+                secret, so a non-browser client that can reach the port could set it to anything.
+                Tokens minted this way are capped at 15 minutes.
+              </p>
             </div>
           </div>
 
@@ -826,11 +844,15 @@ rb.addEventListener(<span class="s">'download'</span>, (e) =&gt; console.log(<sp
 
 rb.navigate(<span class="s">'https://legacy-crm.internal/accounts/42'</span>);
 rb.reload();                   <span class="c">// back to src</span>
-console.log(rb.status);        <span class="c">// { ready, sessionId, url }</span></code></pre>
+console.log(rb.status);        <span class="c">// { ready, sessionId, url }</span>
+
+<span class="c">// end it now instead of waiting for a timeout</span>
+rb.endSession();               <span class="c">// fires 'ended', no reconnect</span></code></pre>
           <p class="note">
             Events: <code>ready</code>, <code>navigate</code>, <code>clipboard</code>,
-            <code>download</code> and <code>expired</code>. Mouse, wheel, keyboard, text clipboard
-            and file pickers are wired up for you.
+            <code>download</code>, <code>expired</code> and <code>ended</code>. Mouse, wheel, keyboard,
+            text clipboard and file pickers are wired up for you. <code>endSession()</code> closes the
+            remote browser immediately — no reconnect grace, no idle timer to wait out.
           </p>
         </div>
       </section>

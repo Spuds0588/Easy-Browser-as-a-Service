@@ -123,6 +123,7 @@ the element's measured size becomes the remote viewport (clamped to 240–2560 p
 | --- | --- |
 | `element.navigate(url)` | Navigate the remote session and remember the URL for resume. |
 | `element.reload()` | Re-navigate to the current `src` (or the remembered URL). |
+| `element.endSession(reason?)` | End the remote session **now**: sends `close`, clears the remembered session id, stops reconnecting, fires `ended`. Returns whether a session was attached. |
 | `element.status` | `{ ready, sessionId, url }` — `ready` is `true` once a session is attached. |
 | `element.sessionId` | Current session id (`sess_…`), or `null`. |
 | `element.lastClipboard` | Last text copied out of the remote page, as received by the host. |
@@ -138,6 +139,7 @@ All are `CustomEvent`s dispatched on the element.
 | `clipboard` | `{ text }` | The remote page copied text; the SDK also tries to write it to the host clipboard. |
 | `download` | `{ url, filename }` | A remote download finished and was triggered on the host page. |
 | `expired` | `{ reason }` | The server reaped the session (idle, hidden, or disconnect grace elapsed). |
+| `ended` | `{ reason }` | The session was closed on purpose — by `endSession()`, or by the server at your request. No reconnect follows. |
 
 Connection and server errors are not events: they are shown in the element's built-in overlay,
 which offers a **Reload session** button. The element also logs `[SDK] …` lines to the console.
@@ -212,12 +214,44 @@ Because tokens are short-lived, mint one as the page loads rather than baking it
 The SDK reads `?token=` off its own `<script>` URL and carries it into the WebSocket `init`, the
 upload request and the download link. What is guarded, and what is deliberately not:
 
+### No backend at all
+
+If the page has no server to mint for it — a static site, a packaged Electron or Tauri app — allow-list
+its origin and its network, and let the element mint for itself:
+
+```bash
+RBAS_TRUSTED_ORIGINS=https://app.example.com
+RBAS_TRUSTED_NETWORKS=10.0.0.0/8,127.0.0.0/8
+```
+
+Then leave the token off the script URL. The SDK notices it has none, `POST`s `/api/token` itself and
+carries on:
+
+```html
+<script src="https://your-server/sdk.js"></script>
+<remote-browser src="https://legacy-crm.internal" style="height:700px"></remote-browser>
+```
+
+What each half of that pair actually proves:
+
+- **`RBAS_TRUSTED_ORIGINS` stops other *websites*.** The browser sets `Origin` and page JavaScript
+  cannot forge it, so an unrelated site cannot mint a token for your service.
+- **`RBAS_TRUSTED_NETWORKS` stops everyone else.** `Origin` is not a secret — a non-browser client
+  that can reach the port can set it to whatever it likes — so the network list is what actually
+  constrains an attacker. Set it; without it the service logs a warning at boot.
+
+Tokens minted this way are capped at `RBAS_BROWSER_TOKEN_TTL_MS` (15 min) whatever TTL is requested,
+and are stamped `sub: origin:<origin>` so you can tell them apart in `/api/sessions`. The master key
+is unaffected and still mints anything. Behind a reverse proxy, set `RBAS_TRUST_PROXY` to the number
+of hops you trust — otherwise the network list sees the proxy's address, not the client's.
+
 | Route | Token required | Why |
 | --- | --- | --- |
 | `GET /sdk.js`, `GET /demo.html`, `GET /healthz` | no | Assets and the container probe must load before any session exists; `/demo.html` gets a working token injected for you. |
-| `POST /api/token` | the **master key** | Server-to-server exchange: master key in, short-lived token out. |
 | `WS /ws` | yes — in the first `init` message | A browser WebSocket cannot send headers, and `init` is already the first frame. |
+| `POST /api/token` | the **master key**, or a trusted origin + network | Two ways to mint: server-to-server with the key, or a no-backend browser minting for itself. |
 | `GET /api/sessions`, `POST /upload`, `GET /download/:id` | yes | `Authorization: Bearer …`, or `?token=…` on a download link (a click navigation cannot set headers). |
+| `DELETE /api/sessions/:id` | yes | Ends one session immediately, skipping the reconnect grace. |
 
 Unauthorized requests get a `401` (or a `1008` WebSocket close) and never allocate a browser context.
 See [docs/SECURITY.md](docs/SECURITY.md) for what this does and does not protect against.
@@ -236,6 +270,10 @@ and `fly.toml` set the ones that matter for deployment.
 | `RBAS_TMP_DIR` | `<os tmpdir>/rbas` | Root for the upload/download bridge (inside the container: `/tmp/rbas`). |
 | `MAX_UPLOAD` | `200mb` | Maximum size of a single uploaded file. |
 | `FILE_TTL_MS` | `300000` (5 min) | How long an uploaded/downloaded file is kept before deletion (swept every `max(30s, ttl/2)`). |
+| `RBAS_TRUSTED_ORIGINS` | — (empty) | Comma-separated origins allowed to mint a token for themselves, for pages with no backend. Empty means the master key is the only way in. |
+| `RBAS_TRUSTED_NETWORKS` | — (empty) | Comma-separated IPs/CIDRs those origins must also be connecting from. Strongly recommended: `Origin` alone is forgeable by a non-browser client. |
+| `RBAS_BROWSER_TOKEN_TTL_MS` | `900000` (15 min) | Ceiling on tokens minted via the trusted-origin path. |
+| `RBAS_TRUST_PROXY` | `0` | Number of trusted proxy hops in front of the service. Non-zero makes `X-Forwarded-For` decide the client IP, so set it only when you really do have that many proxies. |
 
 ### Sessions and reaping
 
@@ -282,9 +320,10 @@ All HTTP responses carry `Access-Control-Allow-Origin: *` so the SDK works from 
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/token` | Exchange the master key (`Authorization: Bearer $RBAS_KEY`) for a short-lived access token. Guarded by the key, not a token. |
+| `POST` | `/api/token` | Mint a short-lived access token. Either present the master key (`Authorization: Bearer $RBAS_KEY`), or call it from a trusted origin + network. See [Access control](#access-control). |
 | `GET` | `/healthz` | Liveness/readiness probe: `{ok, uptime, sessions:{active,max}, browser:{connected,version}, tmp}`. Also used by the image's `HEALTHCHECK`. |
 | `GET` | `/api/sessions` | **token** — Debug/ops view of live sessions: `{active, max, items:[{id,url,visible,idleMs}]}`. |
+| `DELETE` | `/api/sessions/:id` | **token** — End one session immediately (no reconnect grace). `404` if it is already gone. |
 | `POST` | `/upload?name=<filename>` | **token** — Raw request body is stored in the container's tmp dir; returns `{id, filename, bytes}`. Used by the SDK's upload bridge. |
 | `GET` | `/download/:id` | **token** (`?token=`) — Serves a captured remote download as an attachment until `FILE_TTL_MS` elapses, then `404`. |
 | `GET` | `/sdk.js` | The web component. Serve this to embedding pages. |
@@ -295,9 +334,10 @@ All HTTP responses carry `Access-Control-Allow-Origin: *` so the SDK works from 
 ### WebSocket message protocol
 
 The SDK is the reference client; this is the wire contract if you write your own. Client→server:
-`init` (`{url, sessionId, viewport, state, config}`), `navigate`, `mouse`, `wheel`, `key`,
-`clipboard`, `paste`, `resize`, `visibility`, `upload:result`, `ping`. Server→client: `ready`,
-`frame`, `url`, `state`, `clipboard`, `upload:request`, `download`, `error`, `expired`, `pong`.
+`init` (`{url, sessionId, viewport, state, config, token}`), `navigate`, `mouse`, `wheel`, `key`,
+`clipboard`, `paste`, `resize`, `visibility`, `upload:result`, `ping`, `close` (`{reason?}` — ends the
+session at once, no reconnect grace). Server→client: `ready`, `frame`, `url`, `state`, `clipboard`,
+`upload:request`, `download`, `error`, `expired`, `closed`, `pong`.
 The **first** message on a socket must be `init`.
 
 ## Session, Chrome and reaping model
@@ -362,9 +402,15 @@ opaque origin cannot persist a session) and that the reload happened within `REC
 
 ## Testing
 
-`npm run test:auth` runs `test/auth.js`: an in-process matrix over the token signer (accept,
-tamper, expiry, wrong key, master-key check) plus an integration pass against a running server —
-the HTTP guards, the `/api/token` exchange, the demo-token injection and the WebSocket `init` gate.
+`npm run test:auth` runs `test/auth.js`: an in-process matrix over the token signer and the origin /
+network allow-lists (accept, tamper, expiry, wrong key, master-key check, CIDR matching) plus an
+integration pass against a running server — the HTTP guards, both `/api/token` paths, the demo-token
+injection and the WebSocket `init` gate.
+
+`npm run test:teardown` runs `test/teardown.js`: proves the `close` message (what `endSession()`
+sends) and `DELETE /api/sessions/:id` both end a session immediately while a bare disconnect still
+waits out the reconnect grace — the service is started with a 60 s grace so the difference is real,
+not a timing coincidence.
 
 `npm test` runs `test/e2e.js`: it starts the service and two fixture origins, launches a real
 browser, and drives the product end to end — screencast frames painted to the canvas, mouse and
