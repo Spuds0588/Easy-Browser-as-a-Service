@@ -112,6 +112,29 @@
       .hero { padding: 68px 0 64px; border-top: 0; }
       .hero-inner { display: grid; grid-template-columns: minmax(0, 1fr); gap: 30px; }
       .hero-inner > .eyebrow { justify-self: start; }
+      /* The window and the sprayed headline are drawn once at desktop size and
+         scaled whole, so the card stays a wide rectangle with the type centred
+         in it instead of stretching into a tall column on phones. The card is
+         16px narrower than the column so its 10px pink offset shadow still
+         lands inside the clip box instead of being cut off. */
+      .hero-visual { --hero-s: 1; width: 100%; overflow: hidden; height: calc(420px * var(--hero-s)); }
+      .hero-stage {
+        width: 1092px; height: 420px;
+        transform: scale(var(--hero-s)); transform-origin: top left;
+      }
+      .hero-stage .crash-wrap { width: 1076px; }
+      /* Each step is the widest it can be while card + shadow still fit the
+         column, so the window fills the layout at every width. */
+      @media (max-width: 1150px) { .hero-visual { --hero-s: 0.9; } }
+      @media (max-width: 1040px) { .hero-visual { --hero-s: 0.8; } }
+      @media (max-width: 932px)  { .hero-visual { --hero-s: 0.7; } }
+      @media (max-width: 823px)  { .hero-visual { --hero-s: 0.6; } }
+      @media (max-width: 715px)  { .hero-visual { --hero-s: 0.5; } }
+      @media (max-width: 606px)  { .hero-visual { --hero-s: 0.42; } }
+      @media (max-width: 519px)  { .hero-visual { --hero-s: 0.34; } }
+      @media (max-width: 432px)  { .hero-visual { --hero-s: 0.3; } }
+      @media (max-width: 389px)  { .hero-visual { --hero-s: 0.26; } }
+      @media (max-width: 345px)  { .hero-visual { --hero-s: 0.23; } }
       .crash-wrap { position: relative; }
       .crash {
         margin: 0; background: var(--paper); border: 3px solid var(--white);
@@ -133,7 +156,7 @@
         border: 3px solid var(--pink); color: var(--pink); font-family: var(--display); font-size: 26px;
         box-shadow: 3px 3px 0 rgba(255, 45, 142, 0.35);
       }
-      .crash-title { font-family: var(--display); text-transform: uppercase; font-size: clamp(20px, 2.6vw, 30px); margin-bottom: 12px; }
+      .crash-title { font-family: var(--display); text-transform: uppercase; font-size: 30px; margin-bottom: 12px; }
       .crash-body p { color: var(--dim); font-size: 14.5px; }
       .crash-list { margin: 18px 0 0; padding: 0; list-style: none; font-family: var(--mono); font-size: 13px; color: var(--faint); }
       .crash-list li { padding: 7px 0 7px 22px; position: relative; border-top: 1px dashed var(--line); }
@@ -148,7 +171,7 @@
         position: absolute; left: 50%; top: 50%; width: max-content; max-width: 94%;
         transform: translate(-50%, -50%) rotate(-7deg); isolation: isolate;
         font-family: var(--spray); font-weight: 400;
-        font-size: clamp(30px, 11.2vw, 148px); line-height: 0.88;
+        font-size: 143px; line-height: 0.88;
         letter-spacing: -0.005em; text-transform: uppercase; color: var(--pink); margin: 0;
         text-align: center; white-space: nowrap; pointer-events: none;
         filter: url(#spray);
@@ -350,41 +373,47 @@
         <div class="wrap hero-inner">
           <span class="eyebrow">Browser-as-a-Service</span>
 
-          <div class="crash-wrap">
-            <figure class="crash" aria-hidden="true">
-              <div class="crash-bar">
-                <span class="cd"></span><span class="cd"></span><span class="cd"></span>
-                <span class="crash-url">https://legacy-crm.internal/accounts/42</span>
+          <!-- Drawn once at desktop size and scaled whole, so the window stays a wide
+               rectangle with the headline centred in it at every width. -->
+          <div class="hero-visual">
+            <div class="hero-stage">
+              <div class="crash-wrap">
+                <figure class="crash" aria-hidden="true">
+                  <div class="crash-bar">
+                    <span class="cd"></span><span class="cd"></span><span class="cd"></span>
+                    <span class="crash-url">https://legacy-crm.internal/accounts/42</span>
+                  </div>
+                  <div class="crash-body">
+                    <div class="crash-badge">!</div>
+                    <div class="crash-title">This site can’t be embedded</div>
+                    <p>
+                      <b>legacy-crm.internal</b> didn’t send the
+                      <code>Access-Control-Allow-Origin</code> header, so the browser refused to load
+                      it here.
+                    </p>
+                    <ul class="crash-list">
+                      <li>Access to fetch has been blocked by CORS policy: No ‘Access-Control-Allow-Origin’ header is present on the requested resource.</li>
+                      <li>Refused to display ‘legacy-crm.internal’ in a frame because it set ‘X-Frame-Options: DENY’.</li>
+                      <li>net::ERR_BLOCKED_BY_RESPONSE</li>
+                    </ul>
+                  </div>
+                </figure>
+                <h1 class="spray" data-text="YES YOU CAN">
+                  YES YOU CAN<span class="sr-only"> — embed the app that refuses to be embedded.</span>
+                  <svg class="spray-mark" viewBox="0 0 1200 62" aria-hidden="true" focusable="false">
+                    <path class="spray-bar" d="M14 24 C 180 14, 360 30, 600 22 S 1020 12, 1186 26" />
+                    <path class="spray-drip" stroke-width="7" d="M196 28 C 201 38, 197 46, 202 56" />
+                    <circle class="spray-drop" cx="203" cy="58" r="4.5" />
+                    <path class="spray-drip" stroke-width="5.5" d="M536 26 C 541 34, 538 40, 541 48" />
+                    <circle class="spray-drop" cx="542" cy="50" r="3.6" />
+                    <path class="spray-drip" stroke-width="6.5" d="M872 24 C 877 34, 874 42, 877 52" />
+                    <circle class="spray-drop" cx="878" cy="54" r="4.2" />
+                    <path class="spray-drip" stroke-width="4.5" d="M1058 26 C 1062 31, 1060 35, 1062 40" />
+                    <circle class="spray-drop" cx="1063" cy="42" r="3" />
+                  </svg>
+                </h1>
               </div>
-              <div class="crash-body">
-                <div class="crash-badge">!</div>
-                <div class="crash-title">This site can’t be embedded</div>
-                <p>
-                  <b>legacy-crm.internal</b> didn’t send the
-                  <code>Access-Control-Allow-Origin</code> header, so the browser refused to load it
-                  here.
-                </p>
-                <ul class="crash-list">
-                  <li>Access to fetch has been blocked by CORS policy: No ‘Access-Control-Allow-Origin’ header is present on the requested resource.</li>
-                  <li>Refused to display ‘legacy-crm.internal’ in a frame because it set ‘X-Frame-Options: DENY’.</li>
-                  <li>net::ERR_BLOCKED_BY_RESPONSE</li>
-                </ul>
-              </div>
-            </figure>
-            <h1 class="spray" data-text="YES YOU CAN">
-              YES YOU CAN<span class="sr-only"> — embed the app that refuses to be embedded.</span>
-              <svg class="spray-mark" viewBox="0 0 1200 62" aria-hidden="true" focusable="false">
-                <path class="spray-bar" d="M14 24 C 180 14, 360 30, 600 22 S 1020 12, 1186 26" />
-                <path class="spray-drip" stroke-width="7" d="M196 28 C 201 38, 197 46, 202 56" />
-                <circle class="spray-drop" cx="203" cy="58" r="4.5" />
-                <path class="spray-drip" stroke-width="5.5" d="M536 26 C 541 34, 538 40, 541 48" />
-                <circle class="spray-drop" cx="542" cy="50" r="3.6" />
-                <path class="spray-drip" stroke-width="6.5" d="M872 24 C 877 34, 874 42, 877 52" />
-                <circle class="spray-drop" cx="878" cy="54" r="4.2" />
-                <path class="spray-drip" stroke-width="4.5" d="M1058 26 C 1062 31, 1060 35, 1062 40" />
-                <circle class="spray-drop" cx="1063" cy="42" r="3" />
-              </svg>
-            </h1>
+            </div>
           </div>
 
           <p class="lede hero-lede">
