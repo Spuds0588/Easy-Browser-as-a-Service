@@ -21,6 +21,7 @@ const puppeteer = require('puppeteer');
 
 const { start: startFixtureApp } = require('./target-app');
 const { resolveExecutablePath } = require('../server/browser');
+const { TOKEN: RBAS_TOKEN, authHeaders } = require('./auth-helper');
 
 const SERVICE_ORIGIN = process.env.SERVICE_ORIGIN || 'http://localhost:8130';
 const HOST_PORT = Number(process.env.HOST_PORT || 8094);
@@ -34,6 +35,7 @@ const LIVE_DOWNLOAD = process.env.LIVE_DOWNLOAD || 'https://httpbin.org/bytes/40
 // target-app substitutes these into the host fixture it serves.
 process.env.SERVICE_ORIGIN = SERVICE_ORIGIN;
 process.env.TARGET_ORIGIN = SERVICE_ORIGIN;
+process.env.RBAS_TOKEN = RBAS_TOKEN;
 
 const REMOTE_W = 1024;
 const REMOTE_H = 700;
@@ -116,7 +118,7 @@ async function main() {
   };
   // Server-side truth about where the remote browser actually is.
   const remoteUrl = async () => {
-    const info = await (await fetch(`${SERVICE_ORIGIN}/api/sessions`)).json();
+    const info = await (await fetch(`${SERVICE_ORIGIN}/api/sessions`, { headers: authHeaders() })).json();
     return info.items[0] ? info.items[0].url : null;
   };
   const navigateRemote = async (url) => {
@@ -268,7 +270,7 @@ async function main() {
     note('remote -> host copy probe skipped (set LIVE_COPY=1 to click an in-page copy button)');
   }
 
-  const status = await (await fetch(`${SERVICE_ORIGIN}/api/sessions`)).json();
+  const status = await (await fetch(`${SERVICE_ORIGIN}/api/sessions`, { headers: authHeaders() })).json();
   note('sessions after drive', JSON.stringify(status.stats || status));
 
   await browser.close();

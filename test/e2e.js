@@ -26,6 +26,7 @@ const puppeteer = require('puppeteer');
 const { start: startFixtureApp } = require('./target-app');
 const { probeIdleExpiry } = require('./idle-probe');
 const { resolveExecutablePath } = require('../server/browser');
+const { KEY: RBAS_KEY, TOKEN: RBAS_TOKEN, authHeaders } = require('./auth-helper');
 
 // By default this suite spawns the service itself. Point it at an already
 // running deployment instead (e.g. a Docker container) with:
@@ -83,7 +84,7 @@ async function waitFor(label, fn, { timeout = 15000, interval = 150 } = {}) {
 }
 
 async function fetchJson(base, route) {
-  const res = await fetch(`${base}${route}`);
+  const res = await fetch(`${base}${route}`, { headers: authHeaders() });
   if (!res.ok) throw new Error(`${route} -> HTTP ${res.status}`);
   return res.json();
 }
@@ -99,6 +100,8 @@ async function main() {
 
   process.env.SERVICE_ORIGIN = SERVICE_ORIGIN;
   process.env.TARGET_ORIGIN = TARGET_ORIGIN;
+  // target-app substitutes this into the host fixture's sdk.js URL.
+  process.env.RBAS_TOKEN = RBAS_TOKEN;
 
   // 1. bring up (or attach to) the service, the target CRM, and the host app
   let service = null;
@@ -309,7 +312,7 @@ function reportAndExit() {
 function startService(port, extraEnv) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], {
-      env: { ...process.env, PORT: String(port), ...extraEnv },
+      env: { ...process.env, PORT: String(port), RBAS_KEY, ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     children.push(child);

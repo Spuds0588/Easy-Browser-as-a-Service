@@ -15,6 +15,38 @@ have_docker() {
   command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
 }
 
+# A 32-byte signing key, without assuming Node is on the host.
+generate_key() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 32 | tr -d '\n'
+  else
+    head -c 32 /dev/urandom | base64 | tr -d '\n'
+  fi
+}
+
+# The key is stable for the life of this script run and exported, so both the
+# container and a local server share it.
+ensure_key() {
+  if [[ -z "${RBAS_KEY:-}" ]]; then
+    RBAS_KEY="$(generate_key)"
+    echo "==> Generated an access-control signing key for this run"
+  fi
+  export RBAS_KEY
+}
+
+# Exchange the master key for a short-lived token and print a drop-in snippet.
+print_embed() {
+  local port="$1" json token
+  json="$(curl -fsS -X POST -H "Authorization: Bearer ${RBAS_KEY}" "http://localhost:${port}/api/token?ttl=1h" 2>/dev/null || true)"
+  token="$(printf '%s' "$json" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
+  echo "==> Signing key (keep secret; reuse it to keep tokens valid across restarts):"
+  echo "      RBAS_KEY=$RBAS_KEY"
+  if [[ -n "$token" ]]; then
+    echo "==> Embed with a token (expires in 1h):"
+    echo "      <script src=\"http://localhost:${port}/sdk.js?token=${token}\"></script>"
+  fi
+}
+
 # The service needs a Chromium. Prefer one that is already installed; otherwise
 # let puppeteer download its own pinned build at install time.
 find_chrome() {
@@ -52,6 +84,8 @@ main() {
     if have_docker; then mode="docker"; else mode="local"; fi
   fi
 
+  ensure_key
+
   if [[ "$mode" == "docker" ]]; then
     if ! have_docker; then
       echo "Docker is not available. Re-run with --local to run on this machine." >&2
@@ -64,6 +98,7 @@ main() {
     for _ in $(seq 1 30); do
       if curl -fsS "http://localhost:${port}/healthz" >/dev/null 2>&1; then
         echo "==> Up: http://localhost:${port}/demo.html"
+        print_embed "$port"
         return 0
       fi
       sleep 2
@@ -89,6 +124,8 @@ main() {
   npm ci --omit=dev --no-audit --no-fund 2>/dev/null || npm install --omit=dev --no-audit --no-fund
 
   echo "==> Starting Easy Browser-as-a-Service on port $port"
+  echo "==> The demo page needs no token; embeds do. Mint one with:"
+  echo "      RBAS_KEY=$RBAS_KEY node server/token.js --ttl 1h"
   PORT="$port" exec npm start
 }
 

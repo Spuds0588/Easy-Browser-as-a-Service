@@ -8,8 +8,9 @@
  */
 
 const WebSocket = require('ws');
+const { TOKEN } = require('./auth-helper');
 
-function probeIdleExpiry(port, { timeoutMs = 15000, host = 'localhost', url = 'about:blank' } = {}) {
+function probeIdleExpiry(port, { timeoutMs = 15000, host = 'localhost', url = 'about:blank', token = TOKEN } = {}) {
   return new Promise((resolve) => {
     const started = Date.now();
     const socket = new WebSocket(`ws://${host}:${port}/ws`);
@@ -17,7 +18,7 @@ function probeIdleExpiry(port, { timeoutMs = 15000, host = 'localhost', url = 'a
     let reason = null;
 
     socket.on('open', () => {
-      socket.send(JSON.stringify({ type: 'init', url, viewport: { width: 640, height: 480 } }));
+      socket.send(JSON.stringify({ type: 'init', token, url, viewport: { width: 640, height: 480 } }));
     });
 
     socket.on('message', (raw) => {

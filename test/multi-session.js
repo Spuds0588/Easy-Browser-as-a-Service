@@ -25,6 +25,7 @@ const WebSocket = require('ws');
 
 const { start: startFixtureApp } = require('./target-app');
 const { resolveExecutablePath } = require('../server/browser');
+const { KEY: RBAS_KEY, TOKEN: RBAS_TOKEN, authHeaders } = require('./auth-helper');
 
 const EXTERNAL_SERVICE = process.env.E2E_SERVICE_ORIGIN || '';
 const SPAWN_SERVICE = !EXTERNAL_SERVICE;
@@ -69,7 +70,7 @@ async function waitFor(label, fn, { timeout = 20000, interval = 150 } = {}) {
 }
 
 async function fetchJson(route) {
-  const res = await fetch(`${SERVICE_ORIGIN}${route}`);
+  const res = await fetch(`${SERVICE_ORIGIN}${route}`, { headers: authHeaders() });
   return res.json();
 }
 
@@ -166,7 +167,9 @@ function rawInit({ timeout = 30000 } = {}) {
   return new Promise((resolve) => {
     const ws = new WebSocket(`${SERVICE_ORIGIN.replace(/^http/, 'ws')}/ws`);
     const out = { ready: false, error: null, closed: false };
-    ws.on('open', () => ws.send(JSON.stringify({ type: 'init', url: 'about:blank', viewport: { width: 640, height: 480 } })));
+    ws.on('open', () =>
+      ws.send(JSON.stringify({ type: 'init', token: RBAS_TOKEN, url: 'about:blank', viewport: { width: 640, height: 480 } }))
+    );
     ws.on('message', (raw) => {
       const msg = JSON.parse(raw.toString());
       if (msg.type === 'ready') out.ready = true;
@@ -193,6 +196,7 @@ async function main() {
 
   process.env.SERVICE_ORIGIN = SERVICE_ORIGIN;
   process.env.TARGET_ORIGIN = TARGET_ORIGIN;
+  process.env.RBAS_TOKEN = RBAS_TOKEN;
 
   if (SPAWN_SERVICE) {
     await startService(SERVICE_PORT, {
@@ -374,7 +378,7 @@ function reportAndExit() {
 function startService(port, extraEnv) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], {
-      env: { ...process.env, PORT: String(port), ...extraEnv },
+      env: { ...process.env, PORT: String(port), RBAS_KEY, ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     children.push(child);

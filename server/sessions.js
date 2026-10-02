@@ -29,6 +29,7 @@ class Connection extends EventEmitter {
     this.ws = ws;
     this.logger = logger;
     this.closed = false;
+    this.remote = ws._socket && ws._socket.remoteAddress;
     ws.on('close', () => {
       this.closed = true;
       this.emit('close', this);
@@ -56,9 +57,10 @@ class Connection extends EventEmitter {
 }
 
 class SessionManager {
-  constructor({ browser, files, config = {}, logger = console }) {
+  constructor({ browser, files, auth = null, config = {}, logger = console }) {
     this.browser = browser;
     this.files = files;
+    this.auth = auth;
     this.config = { ...DEFAULTS, ...config };
     this.logger = logger;
     this.sessions = new Map();
@@ -95,6 +97,15 @@ class SessionManager {
           return;
         }
         if (bootstrapping) return;
+        // Gate every session on a valid token *before* any browser context is
+        // created, so an unauthenticated peer can never cost us a Chromium.
+        const granted = this.auth ? this.auth.verifyInit(msg) : { ok: false, reason: 'auth not configured' };
+        if (!granted.ok) {
+          this.logger.warn(`[AUTH] rejected session init from ${connection.remote || 'unknown'}: ${granted.reason}`);
+          connection.send(JSON.stringify({ type: 'error', code: 'unauthorized', message: 'Unauthorized' }));
+          connection.close(1008, 'unauthorized');
+          return;
+        }
         bootstrapping = true;
         try {
           session = await this.initSession(msg, connection);

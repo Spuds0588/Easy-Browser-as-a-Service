@@ -11,6 +11,9 @@
  *   src          target URL to open in the remote session
  *   server       origin of the service (defaults to the script's own origin)
  *   storage-key  host localStorage key used to persist session state
+ *
+ * Access token: append it to this script's own URL, and the SDK picks it up
+ *   <script src="https://your-server/sdk.js?token=…"></script>
  */
 
 (() => {
@@ -19,14 +22,20 @@
   const DEFAULT_STORAGE_KEY = 'rbas:session';
   const RECONNECT_DELAYS = [500, 1500, 3000, 6000, 10000];
 
-  // Which script origin did we load from? Lets embeds on other origins work.
-  const SCRIPT_ORIGIN = (() => {
+  // Where the SDK was loaded from, plus the access token (if any) carried on
+  // its own <script src="…/sdk.js?token=…">. Reading it here means the host page
+  // configures the token exactly once, in the script tag.
+  const SCRIPT_INFO = (() => {
     try {
       const script = document.currentScript || document.querySelector('script[src*="sdk.js"]');
-      return script && script.src ? new URL(script.src).origin : window.location.origin;
+      if (script && script.src) {
+        const url = new URL(script.src);
+        return { origin: url.origin, token: url.searchParams.get('token') || null };
+      }
     } catch {
-      return window.location.origin;
+      /* fall through */
     }
+    return { origin: window.location.origin, token: null };
   })();
 
   // CDP modifier bitmask: Alt=1, Ctrl=2, Meta=4, Shift=8.
@@ -91,6 +100,7 @@
       this.sizes = { width: 0, height: 0 };
       this.pendingFrame = false;
       this.pendingChooserId = null;
+      this.unauthorized = false;
     }
 
     // ------------------------------------------------------------ lifecycle
@@ -128,7 +138,11 @@
           /* fall through */
         }
       }
-      return SCRIPT_ORIGIN;
+      return SCRIPT_INFO.origin;
+    }
+
+    get token() {
+      return SCRIPT_INFO.token;
     }
 
     get storageKey() {
@@ -159,6 +173,7 @@
 
     connect() {
       this.intentionalClose = false;
+      this.unauthorized = false;
       const scheme = this.serverOrigin.replace(/^http/, 'ws');
       const wsUrl = `${scheme}/ws`;
 
@@ -182,6 +197,7 @@
         const stored = this.loadStoredState();
         this.send({
           type: 'init',
+          token: this.token,
           url: this.getAttribute('src') || stored.url || 'about:blank',
           sessionId: stored.sessionId || null,
           viewport: this.viewport,
@@ -203,6 +219,7 @@
         console.log('[SDK] socket closed');
         this.ready = false;
         if (this.intentionalClose || !this._connected) return;
+        if (this.unauthorized) return; // don't storm the server with bad credentials
         this.scheduleReconnect();
       });
 
@@ -281,6 +298,12 @@
         case 'pong':
           return;
         case 'error':
+          if (msg.code === 'unauthorized') {
+            this.unauthorized = true;
+            console.warn('[SDK] unauthorized — check the token on the sdk.js URL');
+            this.setStatus('Not authorized — this embed has no valid access token.', true, true);
+            return;
+          }
           console.warn(`[SDK] server error: ${msg.message}`);
           this.setStatus(msg.message, true, true);
           return;
@@ -466,7 +489,10 @@
     // ------------------------------------------------- file / UI lifecycle
 
     triggerDownload(url, filename) {
-      const absolute = url.startsWith('http') ? url : `${this.serverOrigin}${url}`;
+      let absolute = url.startsWith('http') ? url : `${this.serverOrigin}${url}`;
+      // A click-through navigation cannot set headers, so the download bridge
+      // takes its token in the query string.
+      if (this.token) absolute += `${absolute.includes('?') ? '&' : '?'}token=${encodeURIComponent(this.token)}`;
       const anchor = document.createElement('a');
       anchor.href = absolute;
       anchor.download = filename || 'download';
@@ -494,7 +520,10 @@
             const res = await fetch(`${this.serverOrigin}/upload?name=${encodeURIComponent(file.name)}`, {
               method: 'POST',
               body: file,
-              headers: { 'Content-Type': 'application/octet-stream' },
+              headers: {
+                'Content-Type': 'application/octet-stream',
+                ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+              },
             });
             if (!res.ok) throw new Error(`upload failed (${res.status})`);
             const data = await res.json();

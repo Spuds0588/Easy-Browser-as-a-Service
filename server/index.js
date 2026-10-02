@@ -7,11 +7,13 @@
  * live IncognitoBrowserContexts and short-lived /tmp files that expire.
  */
 
+const fsp = require('fs/promises');
 const http = require('http');
 const path = require('path');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 
+const { createAuth, parseDuration } = require('./auth');
 const { BrowserManager } = require('./browser');
 const { FileStore, ROOT } = require('./files');
 const { SessionManager } = require('./sessions');
@@ -27,9 +29,10 @@ const logger = {
 };
 
 async function main() {
+  const auth = createAuth({ logger });
   const files = new FileStore({ logger });
   const browser = new BrowserManager({ logger });
-  const sessions = new SessionManager({ browser, files, logger });
+  const sessions = new SessionManager({ browser, files, auth, logger });
 
   await browser.launch();
 
@@ -40,7 +43,7 @@ async function main() {
   app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     if (req.method === 'OPTIONS') return res.sendStatus(204);
     return next();
   });
@@ -57,7 +60,20 @@ async function main() {
     });
   });
 
-  app.get('/api/sessions', (_req, res) => {
+  // Token mint: server-to-server only. The embedder's backend exchanges the
+  // master signing key for a short-lived token; browsers never see the key.
+  app.post('/api/token', (req, res) => {
+    const provided = auth.tokenFromRequest(req);
+    if (!auth.verifyMasterKey(provided)) {
+      res.setHeader('WWW-Authenticate', 'Bearer realm="rbas"');
+      return res.status(401).json({ error: 'unauthorized', reason: 'master key required' });
+    }
+    const ttl = parseDuration(req.query.ttl, auth.defaultTtlMs);
+    const { token, expiresAt } = auth.sign({ sub: req.query.sub || 'api', ttlMs: ttl });
+    return res.json({ token, expiresAt });
+  });
+
+  app.get('/api/sessions', auth.httpGuard(), (_req, res) => {
     res.json({
       ...sessions.stats,
       items: [...sessions.sessions.values()].map((s) => ({
@@ -72,6 +88,7 @@ async function main() {
   // Upload bridge: the SDK POSTs the raw bytes it got from the host file picker.
   app.post(
     '/upload',
+    auth.httpGuard(),
     express.raw({ type: () => true, limit: process.env.MAX_UPLOAD || '200mb' }),
     async (req, res) => {
       try {
@@ -87,13 +104,27 @@ async function main() {
     }
   );
 
-  // Download bridge: short-lived link the SDK triggers on the host page.
-  app.get('/download/:id', (req, res) => {
+  // Download bridge: short-lived link the SDK triggers on the host page. The
+  // SDK appends ?token= because a click-through navigation cannot set headers.
+  app.get('/download/:id', auth.httpGuard(), (req, res) => {
     const entry = files.get(req.params.id);
     if (!entry || entry.kind !== 'download') return res.status(404).send('Download expired or not found');
     res.download(entry.path, entry.filename, (err) => {
       if (err && !res.headersSent) res.status(500).end();
     });
+  });
+
+  // Bundled demo: hand it a freshly minted token so a local install needs no
+  // configuration. The token is injected into the sdk.js URL, which the SDK
+  // reads back off its own <script> tag.
+  app.get(['/demo.html', '/demo'], async (_req, res, next) => {
+    try {
+      const html = await fsp.readFile(path.join(PUBLIC_DIR, 'demo.html'), 'utf8');
+      const { token } = auth.sign({ sub: 'demo' });
+      res.type('html').send(html.replace('src="/sdk.js"', `src="/sdk.js?token=${encodeURIComponent(token)}"`));
+    } catch (err) {
+      next(err);
+    }
   });
 
   app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }));
@@ -125,6 +156,9 @@ async function main() {
   };
 
   server.listen(PORT, HOST, () => {
+    logger.log(
+      `[BOOT] auth: enforcing signed tokens (key id ${auth.keyId}, ttl ${Math.round(auth.defaultTtlMs / 1000)}s)`
+    );
     logger.log(`[BOOT] Easy Browser-as-a-Service listening on http://localhost:${PORT} (bind ${HOST})`);
     logger.log(`[BOOT] SDK:   http://localhost:${PORT}/sdk.js`);
     logger.log(`[BOOT] Demo:  http://localhost:${PORT}/demo.html`);

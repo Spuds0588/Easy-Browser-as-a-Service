@@ -26,7 +26,8 @@ function handler(req, res) {
     const raw = fs.readFileSync(path.join(FIXTURES, 'host.html'), 'utf8');
     const body = raw
       .replaceAll('{{SERVICE_ORIGIN}}', process.env.SERVICE_ORIGIN || 'http://localhost:8080')
-      .replaceAll('{{TARGET_ORIGIN}}', process.env.TARGET_ORIGIN || 'http://localhost:8081');
+      .replaceAll('{{TARGET_ORIGIN}}', process.env.TARGET_ORIGIN || 'http://localhost:8081')
+      .replaceAll('{{RBAS_TOKEN}}', process.env.RBAS_TOKEN || '');
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(body);
     return;

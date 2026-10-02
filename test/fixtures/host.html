@@ -9,7 +9,7 @@
     </style>
   </head>
   <body>
-    <script src="{{SERVICE_ORIGIN}}/sdk.js"></script>
+    <script src="{{SERVICE_ORIGIN}}/sdk.js?token={{RBAS_TOKEN}}"></script>
     <remote-browser id="rb" src="{{TARGET_ORIGIN}}/target.html" server="{{SERVICE_ORIGIN}}"></remote-browser>
     <script>
       // Test-only hooks: the harness reads these from the host page.

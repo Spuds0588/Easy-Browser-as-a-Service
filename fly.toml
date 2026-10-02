@@ -8,6 +8,10 @@ primary_region = "iad"
 
 [env]
   PORT = "8080"
+  # Access tokens expire an hour after they are minted.
+  RBAS_TOKEN_TTL_MS = "3600000"
+  # Set the signing key as a secret, never in this file:
+  #   fly secrets set RBAS_KEY=$(openssl rand -base64 32)
   # 2GB of RAM must host one Chrome plus every incognito context in it.
   MAX_SESSIONS = "4"
   # Aggressive reaping keeps serverless containers cheap.
