@@ -17,10 +17,17 @@ const { createAuth, parseDuration } = require('./auth');
 const { BrowserManager } = require('./browser');
 const { FileStore, ROOT } = require('./files');
 const { SessionManager } = require('./sessions');
+const { evaluateBrowserTrust, parseNetworks, parseOrigins } = require('./trust');
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '0.0.0.0';
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+
+// No-backend browsers may mint for themselves from these origins/networks. Empty
+// by default, which leaves the master key as the only way in.
+const TRUSTED_ORIGINS = parseOrigins(process.env.RBAS_TRUSTED_ORIGINS);
+const TRUSTED_NETWORKS = parseNetworks(process.env.RBAS_TRUSTED_NETWORKS);
+const BROWSER_TOKEN_TTL_MS = parseDuration(process.env.RBAS_BROWSER_TOKEN_TTL_MS, 15 * 60 * 1000);
 
 const logger = {
   log: (...args) => console.log(...args),
@@ -39,10 +46,15 @@ async function main() {
   const app = express();
   app.disable('x-powered-by');
 
+  // Behind a proxy the socket address is the proxy's, so let the operator say
+  // how many hops to trust. Wrong values make the IP allow-list meaningless.
+  const trustProxy = Number(process.env.RBAS_TRUST_PROXY || 0);
+  if (Number.isFinite(trustProxy) && trustProxy > 0) app.set('trust proxy', trustProxy);
+
   // Embeds live on other origins, so the HTTP bridges must be CORS-open.
   app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     if (req.method === 'OPTIONS') return res.sendStatus(204);
     return next();
@@ -60,17 +72,35 @@ async function main() {
     });
   });
 
-  // Token mint: server-to-server only. The embedder's backend exchanges the
-  // master signing key for a short-lived token; browsers never see the key.
+  // Token mint, two ways in:
+  //   1. the master signing key (server-to-server) — full trust, any TTL;
+  //   2. a trusted origin + trusted network (a browser with no backend) —
+  //      short-lived token only. See server/trust.js for what each proves.
   app.post('/api/token', (req, res) => {
     const provided = auth.tokenFromRequest(req);
-    if (!auth.verifyMasterKey(provided)) {
-      res.setHeader('WWW-Authenticate', 'Bearer realm="rbas"');
-      return res.status(401).json({ error: 'unauthorized', reason: 'master key required' });
-    }
     const ttl = parseDuration(req.query.ttl, auth.defaultTtlMs);
-    const { token, expiresAt } = auth.sign({ sub: req.query.sub || 'api', ttlMs: ttl });
-    return res.json({ token, expiresAt });
+
+    if (auth.verifyMasterKey(provided)) {
+      const { token, expiresAt } = auth.sign({ sub: req.query.sub || 'api', ttlMs: ttl });
+      return res.json({ token, expiresAt, via: 'master-key' });
+    }
+
+    const trust = evaluateBrowserTrust(req, { origins: TRUSTED_ORIGINS, networks: TRUSTED_NETWORKS });
+    if (trust.ok) {
+      const capped = Math.min(ttl, BROWSER_TOKEN_TTL_MS);
+      const { token, expiresAt } = auth.sign({ sub: `origin:${trust.origin}`, ttlMs: capped });
+      return res.json({ token, expiresAt, via: 'trusted-origin' });
+    }
+
+    res.setHeader('WWW-Authenticate', 'Bearer realm="rbas"');
+    return res.status(401).json({ error: 'unauthorized', reason: trust.reason });
+  });
+
+  // Ops teardown: end one session now instead of waiting for a timeout.
+  app.delete('/api/sessions/:id', auth.httpGuard(), async (req, res) => {
+    const closed = await sessions.closeById(req.params.id, 'requested over HTTP');
+    if (!closed) return res.status(404).json({ error: 'no such session', id: req.params.id });
+    return res.json({ closed: true, id: req.params.id });
   });
 
   app.get('/api/sessions', auth.httpGuard(), (_req, res) => {
@@ -159,6 +189,19 @@ async function main() {
     logger.log(
       `[BOOT] auth: enforcing signed tokens (key id ${auth.keyId}, ttl ${Math.round(auth.defaultTtlMs / 1000)}s)`
     );
+    if (TRUSTED_ORIGINS.length) {
+      logger.log(
+        `[BOOT] auth: browsers may self-mint from ${TRUSTED_ORIGINS.join(', ')} ` +
+          `(ttl ${Math.round(BROWSER_TOKEN_TTL_MS / 1000)}s, networks: ${TRUSTED_NETWORKS.map((n) => n.raw).join(', ') || 'ANY'})`
+      );
+      if (!TRUSTED_NETWORKS.length) {
+        logger.warn(
+          '[AUTH] RBAS_TRUSTED_ORIGINS is set without RBAS_TRUSTED_NETWORKS. The Origin header is not\n' +
+            '[AUTH] a secret: a non-browser client that can reach this port can forge it and mint tokens.\n' +
+            '[AUTH] Set RBAS_TRUSTED_NETWORKS to the addresses your browsers come from.'
+        );
+      }
+    }
     logger.log(`[BOOT] Easy Browser-as-a-Service listening on http://localhost:${PORT} (bind ${HOST})`);
     logger.log(`[BOOT] SDK:   http://localhost:${PORT}/sdk.js`);
     logger.log(`[BOOT] Demo:  http://localhost:${PORT}/demo.html`);

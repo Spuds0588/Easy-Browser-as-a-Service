@@ -13,6 +13,7 @@
     "dev": "node server/index.js",
     "test": "node test/e2e.js",
     "test:auth": "node test/auth.js",
+    "test:teardown": "node test/teardown.js",
     "test:multi": "node test/multi-session.js",
     "test:live": "node test/live-drive.js",
     "test:probe": "node test/robustness-probe.js"

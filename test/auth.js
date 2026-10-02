@@ -19,6 +19,7 @@ const path = require('path');
 const WebSocket = require('ws');
 
 const { createAuth, generateKey } = require('../server/auth');
+const { ipInNetworks, normalizeIp, parseNetworks, parseOrigins } = require('../server/trust');
 const { resolveExecutablePath } = require('../server/browser');
 
 const PORT = Number(process.env.E2E_AUTH_PORT || 8190);
@@ -124,6 +125,9 @@ function startService() {
         ...process.env,
         PORT: String(PORT),
         RBAS_KEY: KEY,
+        // The no-backend path: this origin may mint for itself, from loopback.
+        RBAS_TRUSTED_ORIGINS: 'http://trusted.example',
+        RBAS_TRUSTED_NETWORKS: '127.0.0.0/8,::1',
         RBAS_TMP_DIR: path.join(os.tmpdir(), 'rbas-auth'),
         PUPPETEER_EXECUTABLE_PATH: resolveExecutablePath() || '',
       },
@@ -187,6 +191,32 @@ function unitMatrix() {
   return auth;
 }
 
+// -------------------------------------------------------------- trust matrix
+
+function trustMatrix() {
+  console.log('\n=== in-process: server/trust.js ===');
+  const networks = parseNetworks('127.0.0.0/8,10.0.0.0/8,::1,fd00::/8,192.168.1.5');
+  const cases = [
+    ['127.0.0.1', true],
+    ['::ffff:127.0.0.1', true],
+    ['10.1.2.3', true],
+    ['11.0.0.1', false],
+    ['::1', true],
+    ['fd00::1', true],
+    ['192.168.1.5', true],
+    ['192.168.1.6', false],
+    ['not-an-ip', false],
+  ];
+  for (const [ip, expected] of cases) {
+    check(`network allow-list: ${ip} -> ${expected}`, ipInNetworks(ip, networks) === expected);
+  }
+  check('an empty network list matches nothing', ipInNetworks('127.0.0.1', []) === false);
+  check('IPv4-mapped addresses normalise', normalizeIp('::ffff:10.0.0.1') === '10.0.0.1');
+  check('a zone index is stripped', normalizeIp('fe80::1%eth0') === 'fe80::1');
+  check('origins drop a trailing slash', parseOrigins('https://a.example.com/, http://b.test')[0] === 'https://a.example.com');
+  check('garbage network entries are ignored', parseNetworks('nonsense,10.0.0.0/99').length === 0);
+}
+
 // ----------------------------------------------------------- integration half
 
 async function integration(auth) {
@@ -239,6 +269,35 @@ async function integration(auth) {
   check('GET /demo.html injects a token into the sdk.js URL', Boolean(demoToken), demoToken ? 'found' : 'not found');
   check('the injected demo token verifies', Boolean(demoToken) && auth.verify(decodeURIComponent(demoToken)).ok === true);
 
+  // No-backend path: an allow-listed origin mints for itself.
+  const mintWithOrigin = (origin) =>
+    fetch(`${ORIGIN}/api/token`, { method: 'POST', headers: origin ? { Origin: origin } : {} });
+
+  const trusted = await mintWithOrigin('http://trusted.example');
+  const trustedBody = trusted.ok ? await trusted.json() : {};
+  check(
+    'a trusted origin mints with no backend and no key',
+    trusted.status === 200 && typeof trustedBody.token === 'string',
+    `HTTP ${trusted.status}${trustedBody.reason ? ` (${trustedBody.reason})` : ''}`
+  );
+  check('the mint is labelled trusted-origin', trustedBody.via === 'trusted-origin', String(trustedBody.via));
+  check('the self-minted token verifies', Boolean(trustedBody.token) && auth.verify(trustedBody.token).ok === true);
+
+  const capped = await fetch(`${ORIGIN}/api/token?ttl=24h`, {
+    method: 'POST',
+    headers: { Origin: 'http://trusted.example' },
+  });
+  const cappedBody = capped.ok ? await capped.json() : {};
+  const lifetimeMs = cappedBody.expiresAt ? cappedBody.expiresAt - Date.now() : Number.POSITIVE_INFINITY;
+  check(
+    'a browser-minted TTL is capped well below the 24h it asked for',
+    lifetimeMs <= 15 * 60 * 1000 + 5000,
+    `${Math.round(lifetimeMs / 1000)}s`
+  );
+
+  check('an untrusted origin is refused', (await mintWithOrigin('http://evil.example')).status === 401);
+  check('a missing Origin header is refused', (await mintWithOrigin(null)).status === 401);
+
   // WebSocket gate.
   const noToken = await wsAttempt(undefined);
   check('WS init without a token is refused', noToken.ready === false && noToken.code === 'unauthorized');
@@ -262,6 +321,7 @@ async function integration(auth) {
 async function main() {
   console.log('\n=== Easy Browser-as-a-Service — access control ===');
   const auth = unitMatrix();
+  trustMatrix();
 
   let service = null;
   try {

@@ -22,8 +22,8 @@ function handler(req, res) {
     res.end(body);
     return;
   }
-  if (url.pathname === '/host.html') {
-    const raw = fs.readFileSync(path.join(FIXTURES, 'host.html'), 'utf8');
+  if (url.pathname === '/host.html' || url.pathname === '/host-autotoken.html') {
+    const raw = fs.readFileSync(path.join(FIXTURES, url.pathname.slice(1)), 'utf8');
     const body = raw
       .replaceAll('{{SERVICE_ORIGIN}}', process.env.SERVICE_ORIGIN || 'http://localhost:8080')
       .replaceAll('{{TARGET_ORIGIN}}', process.env.TARGET_ORIGIN || 'http://localhost:8081')

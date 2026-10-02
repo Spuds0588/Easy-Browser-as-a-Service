@@ -112,6 +112,9 @@ async function main() {
       DOWNLOAD_POLL_MS: '300',
       PUPPETEER_EXECUTABLE_PATH: executablePath || '',
       RBAS_TMP_DIR: path.join(tmpRoot, 'rbas-main'),
+      // The no-backend path: the host fixture origin may mint for itself.
+      RBAS_TRUSTED_ORIGINS: HOST_ORIGIN,
+      RBAS_TRUSTED_NETWORKS: '127.0.0.0/8,::1',
     });
   }
   if (RUN_IDLE_TEST) {
@@ -287,6 +290,36 @@ async function main() {
   await page.close();
   await waitFor('session reaped after disconnect grace', async () => (await fetchJson(SERVICE_ORIGIN, '/api/sessions')).active === 0, { timeout: GRACE_WAIT_MS });
   check('disconnect grace reaps the remote context', true, 'active sessions back to 0');
+
+  // 10b. no-backend path: a page carrying no token mints its own, and can end
+  //      the session on demand instead of waiting out the reconnect grace.
+  const autoPage = await browser.newPage();
+  await autoPage.goto(`${HOST_ORIGIN}/host-autotoken.html`, { waitUntil: 'domcontentloaded' });
+  const auto = await waitFor(
+    'auto-minted session ready',
+    async () =>
+      autoPage.evaluate(() => {
+        const rb = document.getElementById('rb');
+        return rb && rb.status && rb.status.ready ? { sessionId: rb.status.sessionId, token: rb.token } : null;
+      }),
+    { timeout: 30000 }
+  );
+  check('a page with no token mints one from the service', /^v1\./.test(auto.token || ''), `${String(auto.token).slice(0, 12)}…`);
+  check('the self-minted session is live', /^sess_/.test(auto.sessionId || ''), auto.sessionId);
+  check('the service sees exactly the auto-minted session', (await fetchJson(SERVICE_ORIGIN, '/api/sessions')).active === 1);
+
+  await autoPage.evaluate(() => document.getElementById('rb').endSession('e2e'));
+  const tornDown = await waitFor(
+    'session torn down by endSession',
+    async () => (await fetchJson(SERVICE_ORIGIN, '/api/sessions')).active === 0,
+    { timeout: 2500, interval: 100 }
+  )
+    .then(() => true)
+    .catch(() => false);
+  check('endSession() tears the session down inside the 4s grace', tornDown, `active=${(await fetchJson(SERVICE_ORIGIN, '/api/sessions')).active}`);
+  check('endSession() fires the ended event on the element', await autoPage.evaluate(() => window.__rbEvents.some((e) => e.type === 'ended')));
+  check('endSession() clears the remembered session id', (await autoPage.evaluate(() => document.getElementById('rb').sessionId)) === null);
+  await autoPage.close();
 
   // 11. zombie management: idle timeout expires an untouched session
   if (RUN_IDLE_TEST) {

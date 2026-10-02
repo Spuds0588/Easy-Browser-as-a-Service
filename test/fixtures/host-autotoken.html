@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Host CRM (no backend — mints its own token)</title>
+    <style>
+      html, body { margin: 0; background: #1b2432; color: #e6ecf5; font: 14px system-ui, sans-serif; }
+      remote-browser { display: block; width: 1024px; height: 700px; }
+    </style>
+  </head>
+  <body>
+    <!-- Deliberately no ?token= here: this page has no backend to mint one,
+         so the element must get one from the service itself. -->
+    <script src="{{SERVICE_ORIGIN}}/sdk.js"></script>
+    <remote-browser id="rb" src="{{TARGET_ORIGIN}}/target.html" server="{{SERVICE_ORIGIN}}"></remote-browser>
+    <script>
+      // Test-only hooks, mirroring host.html.
+      const params = new URLSearchParams(location.search);
+      const element = document.getElementById('rb');
+      if (params.get('key')) element.setAttribute('storage-key', params.get('key'));
+      if (params.get('src')) element.setAttribute('src', params.get('src'));
+      window.__rb = element;
+      window.__rbEvents = [];
+      ['ready', 'navigate', 'download', 'clipboard', 'ended'].forEach((type) => {
+        element.addEventListener(type, (event) => window.__rbEvents.push({ type, detail: event.detail }));
+      });
+    </script>
+  </body>
+</html>

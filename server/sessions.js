@@ -198,6 +198,7 @@ class SessionManager {
     });
     session.on('closed', () => this.forget(session));
     session.on('pageclosed', () => this.destroy(session, 'remote browser closed'));
+    session.on('closerequested', (reason) => this.closeById(session.id, reason || 'client requested'));
   }
 
   /** Socket dropped: keep the context warm for a short reconnect window. */
@@ -218,14 +219,27 @@ class SessionManager {
     }
   }
 
-  async destroy(session, reason) {
+  async destroy(session, reason, { type = 'expired' } = {}) {
     if (!session || session.closed) return;
     this.logger.log(`[SESSIONS ${session.id}] reaping: ${reason}`);
-    session.send({ type: 'expired', reason });
+    session.send({ type, reason });
     setTimeout(() => {
-      if (session.sink) session.sink.close(1000, 'session expired');
+      if (session.sink) session.sink.close(1000, type === 'closed' ? 'session closed' : 'session expired');
     }, 250).unref?.();
     await session.close().catch(() => {});
+  }
+
+  /**
+   * End a session now, by id. Used by the `close` WebSocket message and by
+   * DELETE /api/sessions/:id — both bypass the reconnect grace on purpose:
+   * the whole point is to stop paying for the context immediately.
+   */
+  async closeById(id, reason = 'client requested') {
+    const session = this.sessions.get(id);
+    if (!session) return false;
+    this.cancelGrace(session);
+    await this.destroy(session, reason, { type: 'closed' });
+    return true;
   }
 
   forget(session) {

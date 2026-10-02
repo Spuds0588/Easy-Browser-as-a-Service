@@ -379,6 +379,7 @@ class RemoteSession extends EventEmitter {
   }
 
   async startScreencast(viewport, { force = false } = {}) {
+    if (this.closed) return; // the context is gone; there is nothing to stream
     const vp = viewport || { width: this.config.maxWidth, height: this.config.maxHeight };
     this.screencastSizes = { width: Math.round(vp.width), height: Math.round(vp.height) };
     if (this.screencasting && !force) return;
@@ -512,6 +513,10 @@ class RemoteSession extends EventEmitter {
         return this.setVisibility(Boolean(msg.visible));
       case 'ping':
         return this.send({ type: 'pong', t: Date.now() });
+      case 'close':
+        // Explicit teardown: no reconnect grace, the caller is done with it.
+        this.emit('closerequested', typeof msg.reason === 'string' ? msg.reason : null);
+        return undefined;
       default:
         this.logger.warn(`[SESSION ${this.id}] unknown message type=${msg.type}`);
     }
@@ -639,7 +644,7 @@ class RemoteSession extends EventEmitter {
   }
 
   async setVisibility(visible) {
-    if (this.visible === visible) return;
+    if (this.closed || this.visible === visible) return;
     this.visible = visible;
     this.emit('visibility', visible, this);
     try {
@@ -650,6 +655,8 @@ class RemoteSession extends EventEmitter {
         this.screencasting = false;
       }
     } catch (err) {
+      // A teardown that races a visibility change is expected, not a fault.
+      if (this.closed) return;
       this.logger.warn(`[SESSION ${this.id}] visibility switch failed: ${err.message}`);
     }
   }

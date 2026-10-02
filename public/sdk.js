@@ -12,8 +12,14 @@
  *   server       origin of the service (defaults to the script's own origin)
  *   storage-key  host localStorage key used to persist session state
  *
- * Access token: append it to this script's own URL, and the SDK picks it up
+ * Access token: either put one on this script's own URL…
  *   <script src="https://your-server/sdk.js?token=…"></script>
+ * …or leave it off and let the element mint one from the service itself, which
+ * works when the operator trusts this page's origin (RBAS_TRUSTED_ORIGINS /
+ * RBAS_TRUSTED_NETWORKS). Note there is no `token` attribute — it rides the
+ * script URL so the host page configures it exactly once.
+ *
+ * el.endSession() ends the remote session immediately (no reconnect grace).
  */
 
 (() => {
@@ -21,6 +27,8 @@
 
   const DEFAULT_STORAGE_KEY = 'rbas:session';
   const RECONNECT_DELAYS = [500, 1500, 3000, 6000, 10000];
+  // Treat a token as expired a little early so it cannot lapse mid-handshake.
+  const TOKEN_REFRESH_MARGIN_MS = 10_000;
 
   // Where the SDK was loaded from, plus the access token (if any) carried on
   // its own <script src="…/sdk.js?token=…">. Reading it here means the host page
@@ -101,6 +109,11 @@
       this.pendingFrame = false;
       this.pendingChooserId = null;
       this.unauthorized = false;
+      // Access token: whatever the script URL carried, or — when it carried
+      // nothing — one minted from the service itself (no backend required).
+      this._token = SCRIPT_INFO.token;
+      this._tokenExpiresAt = 0;
+      this._endTimer = null;
     }
 
     // ------------------------------------------------------------ lifecycle
@@ -142,7 +155,50 @@
     }
 
     get token() {
-      return SCRIPT_INFO.token;
+      return this._token;
+    }
+
+    // ------------------------------------------------------------ access token
+
+    /** Is the token we hold still usable? Unknown expiry (a pasted token) counts as usable. */
+    tokenUsable() {
+      if (!this._token) return false;
+      if (!this._tokenExpiresAt) return true;
+      return this._tokenExpiresAt - Date.now() > TOKEN_REFRESH_MARGIN_MS;
+    }
+
+    /**
+     * Ask the service for a token on the page's own behalf.
+     *
+     * This is the no-backend path: the operator allow-lists the embedding
+     * origin (and usually a network) with RBAS_TRUSTED_ORIGINS /
+     * RBAS_TRUSTED_NETWORKS, and the page mints for itself. If that is not
+     * configured the service answers 401 and we fall through to the overlay.
+     */
+    async mintToken() {
+      try {
+        const res = await fetch(`${this.serverOrigin}/api/token`, { method: 'POST' });
+        if (!res.ok) {
+          console.warn(`[SDK] token mint refused (HTTP ${res.status}) — this page's origin is not trusted`);
+          return null;
+        }
+        const data = await res.json();
+        if (!data || !data.token) return null;
+        this._token = data.token;
+        this._tokenExpiresAt = Number(data.expiresAt) || 0;
+        console.log(`[SDK] minted a token from the service (via ${data.via || 'unknown'})`);
+        return this._token;
+      } catch (err) {
+        console.warn(`[SDK] token mint failed: ${err.message}`);
+        return null;
+      }
+    }
+
+    /** Hold a usable token, minting one if we have none or ours has lapsed. */
+    async ensureToken() {
+      if (this.tokenUsable()) return this._token;
+      if (this._token) this._token = null; // lapsed: replace rather than replay
+      return this.mintToken();
     }
 
     get storageKey() {
@@ -171,13 +227,24 @@
 
     // ----------------------------------------------------------- connection
 
-    connect() {
+    async connect() {
       this.intentionalClose = false;
       this.unauthorized = false;
-      const scheme = this.serverOrigin.replace(/^http/, 'ws');
-      const wsUrl = `${scheme}/ws`;
+      clearTimeout(this._endTimer);
 
       this.setStatus(`Connecting to ${this.serverOrigin}…`);
+      // A long session can outlive a short-lived token, so refresh before
+      // reconnecting; with a token already in the script URL this is a no-op.
+      if (!this.tokenUsable()) await this.ensureToken();
+      if (this.intentionalClose || !this._connected) return;
+      if (!this._token) {
+        this.unauthorized = true;
+        this.setStatus('Not authorized — this embed has no access token, and this origin may not mint one.', true, true);
+        return;
+      }
+
+      const scheme = this.serverOrigin.replace(/^http/, 'ws');
+      const wsUrl = `${scheme}/ws`;
       console.log(`[SDK] connecting ${wsUrl}`);
 
       let socket;
@@ -218,6 +285,7 @@
       socket.addEventListener('close', () => {
         console.log('[SDK] socket closed');
         this.ready = false;
+        clearTimeout(this._endTimer);
         if (this.intentionalClose || !this._connected) return;
         if (this.unauthorized) return; // don't storm the server with bad credentials
         this.scheduleReconnect();
@@ -295,6 +363,10 @@
         case 'expired':
           this.handleExpired(msg.reason);
           return;
+        case 'closed':
+          // Explicit teardown: ours, or the server's. Never reconnect into it.
+          this.handleClosed(msg.reason);
+          return;
         case 'pong':
           return;
         case 'error':
@@ -319,6 +391,16 @@
       this.saveStoredState({ sessionId: null });
       this.setStatus(`Session ended (${reason || 'expired'}).`, true, true);
       this.dispatchEvent(new CustomEvent('expired', { detail: { reason } }));
+    }
+
+    handleClosed(reason) {
+      console.log(`[SDK] session closed: ${reason}`);
+      this.ready = false;
+      this.intentionalClose = true;
+      this.sessionId = null;
+      this.saveStoredState({ sessionId: null });
+      this.setStatus('Session closed.', false, false);
+      this.dispatchEvent(new CustomEvent('ended', { detail: { reason } }));
     }
 
     // ------------------------------------------------------------ rendering
@@ -570,6 +652,31 @@
 
     reload() {
       this.send({ type: 'navigate', url: this.getAttribute('src') || this.loadStoredState().url });
+    }
+
+    /**
+     * End the remote session now, on purpose.
+     *
+     * Sends `close` so the server tears the browser context down immediately
+     * (no reconnect grace), clears the remembered session id, and stops
+     * reconnecting. Fires the `ended` event.
+     */
+    endSession(reason = 'client requested') {
+      const had = Boolean(this.sessionId);
+      this.intentionalClose = true;
+      clearTimeout(this._reconnectTimer);
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.send({ type: 'close', reason });
+      }
+      // The server closes the socket once it has reaped the context; this is
+      // only a backstop so we never leave a socket dangling if that is lost.
+      clearTimeout(this._endTimer);
+      this._endTimer = setTimeout(() => this.closeSocket(), 2000);
+      this.ready = false;
+      this.sessionId = null;
+      this.saveStoredState({ sessionId: null });
+      this.dispatchEvent(new CustomEvent('ended', { detail: { reason } }));
+      return had;
     }
 
     get status() {
