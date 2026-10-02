@@ -1,0 +1,34 @@
+# Easy Browser-as-a-Service
+
+> Embed a real remote Chromium in any web app with one custom element (`<remote-browser>`). Use it
+> when the target application refuses to be framed (X-Frame-Options / CSP), when its cookies or
+> localStorage collide with your own origin, or when it is reachable from your server but not from the
+> user's browser (CORS). Frames stream over WebSocket; the server is stateless and session state is
+> persisted by the SDK in the host page's localStorage.
+
+MIT licensed. Ships as one Docker image on port 8080, or runs on bare-metal Node 18+ with a system
+Chrome. No database, no volume, no build step, no dependencies in the client SDK.
+
+## Start here
+
+- [skill.md](https://spuds0588.github.io/Easy-Browser-as-a-Service/skill.md): the agent-facing skill file — when to use it, the element's attributes/methods/events, endpoints, configuration, session lifecycle and troubleshooting in one page.
+- [Landing page](https://spuds0588.github.io/Easy-Browser-as-a-Service/): what it is, the problem it solves, a three-step embed, and the architecture.
+- [README](https://github.com/Spuds0588/Easy-Browser-as-a-Service/blob/main/README.md): the complete reference — every environment variable, the WebSocket wire protocol, the reaping model.
+- [Deployment](https://github.com/Spuds0588/Easy-Browser-as-a-Service/blob/main/docs/DEPLOY.md): Docker, Compose and Fly.io.
+- [Security and limits](https://github.com/Spuds0588/Easy-Browser-as-a-Service/blob/main/docs/SECURITY.md): what it deliberately does not protect you from.
+
+## Key facts
+
+- Component: `<remote-browser src="…" server="…" storage-key="…">`, a vanilla Custom Element using Shadow DOM. Give it a height; its measured size becomes the remote viewport (clamped 240–2560 × 240–1600 px).
+- Methods: `navigate(url)`, `reload()`. Properties: `status {ready, sessionId, url}`, `sessionId`, `lastClipboard`.
+- Events: `ready`, `navigate`, `clipboard`, `download`, `expired`.
+- Endpoints: `GET /healthz`, `GET /api/sessions`, `POST /upload?name=…`, `GET /download/:id`, `GET /sdk.js`, `GET /demo.html`, `WS /ws`. All HTTP responses send `Access-Control-Allow-Origin: *`.
+- Defaults: `PORT=8080`, `MAX_SESSIONS=8`, `RECONNECT_GRACE_MS=60000`, `IDLE_TIMEOUT_MS=600000`, `HIDDEN_TIMEOUT_MS=180000`, `SCREENCAST_QUALITY=70`, `FILE_TTL_MS=300000`, `MAX_UPLOAD=200mb`. Budget about 1 GB of memory per concurrent session.
+- Model: one master Chromium process per server; one incognito browser context per session. Isolation is per session, so memory grows with sessions rather than browser processes.
+- Limits: no authentication (put it behind your own proxy); clipboard is text-only and `Ctrl`/`Cmd`+`C`/`V`/`X` are reserved for the host; no audio; no WebRTC; no persistence across a container restart.
+- Deployment note: `/ws` must pass through your proxy with upgrades intact, and Chromium needs `--shm-size=1gb` (512 MB minimum).
+
+## Optional
+
+- [Demo](https://github.com/Spuds0588/Easy-Browser-as-a-Service#quickstart): `./install.sh`, then open `http://localhost:8080/demo.html`.
+- [Tests](https://github.com/Spuds0588/Easy-Browser-as-a-Service/blob/main/README.md#testing): `npm test`, `npm run test:multi`, `npm run test:live`, `npm run test:probe`.

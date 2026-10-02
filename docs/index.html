@@ -6,8 +6,156 @@
     <title>Easy Browser-as-a-Service — embed the app that refuses to be embedded</title>
     <meta
       name="description"
-      content="One Web Component. One stateless container. A real remote Chromium streams into your page over WebSocket, with isolated cookies and localStorage and sessions that survive a reload."
+      content="Embed a real remote Chromium in your app with one custom element — for sites that block iframes with X-Frame-Options or CSP, collide on cookies, or are unreachable from the browser. One stateless container, MIT licensed."
     />
+    <meta name="author" content="Corey Burns" />
+    <link rel="canonical" href="https://spuds0588.github.io/Easy-Browser-as-a-Service/" />
+    <!-- Crawlers and answer engines are welcome: this page is written to be quoted. -->
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+    <meta name="keywords" content="browser as a service, embed remote browser, X-Frame-Options, frame-ancestors, CORS, remote Chromium, web component, Puppeteer, CDP screencast, embed a site that blocks iframes" />
+    <!-- Agent-facing discovery: a markdown skill file an agent can read whole, and the summary file crawlers look for. -->
+    <link
+      rel="alternate"
+      type="text/markdown"
+      title="Easy Browser-as-a-Service — agent skill file"
+      href="https://spuds0588.github.io/Easy-Browser-as-a-Service/skill.md"
+    />
+    <link rel="alternate" type="text/plain" title="llms.txt" href="https://spuds0588.github.io/Easy-Browser-as-a-Service/llms.txt" />
+    <link rel="sitemap" type="application/xml" href="https://spuds0588.github.io/Easy-Browser-as-a-Service/sitemap.xml" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Easy Browser-as-a-Service" />
+    <meta property="og:title" content="Easy Browser-as-a-Service — embed the app that refuses to be embedded" />
+    <meta
+      property="og:description"
+      content="One Web Component, one stateless container, a real remote Chromium over WebSocket. For sites that block iframes, collide on cookies, or can't be reached from the browser."
+    />
+    <meta property="og:url" content="https://spuds0588.github.io/Easy-Browser-as-a-Service/" />
+    <meta property="og:image" content="https://spuds0588.github.io/Easy-Browser-as-a-Service/assets/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="A browser window stamped YES YOU CAN, over the error card it replaces." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Easy Browser-as-a-Service" />
+    <meta
+      name="twitter:description"
+      content="Embed a real remote Chromium with one custom element — for apps that refuse to be framed or reached. MIT licensed, stateless, no build step."
+    />
+    <meta name="twitter:image" content="https://spuds0588.github.io/Easy-Browser-as-a-Service/assets/og.png" />
+
+    <!-- Machine-readable descriptions for search engines and answer engines. The
+         FAQ questions and HowTo steps deliberately mirror the visible sections. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Easy Browser-as-a-Service",
+        "alternateName": "RBAS",
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "Browser embedding and automation",
+        "operatingSystem": "Docker, Linux, macOS",
+        "runtimePlatform": "Node.js 18+ or Docker",
+        "softwareRequirements": "Docker, or Node.js 18+ with a Chrome/Chromium binary",
+        "description": "Embed a real remote Chromium inside your own web app with one custom element. Use it when the target application refuses to be framed (X-Frame-Options or CSP), when its cookies and localStorage collide with your own, or when it cannot be reached from the browser (CORS). The session streams as JPEG frames over a WebSocket from a stateless container that holds no database and no volume.",
+        "url": "https://spuds0588.github.io/Easy-Browser-as-a-Service/",
+        "codeRepository": "https://github.com/Spuds0588/Easy-Browser-as-a-Service",
+        "license": "https://opensource.org/licenses/MIT",
+        "programmingLanguage": "JavaScript",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@type": "Person", "name": "Corey Burns", "url": "https://github.com/Spuds0588" },
+        "keywords": "browser as a service, embed remote browser, X-Frame-Options, CORS, remote Chromium, web component, CDP screencast"
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "HowTo",
+        "name": "Embed a remote browser in three steps",
+        "description": "Run the service, load its SDK, and drop in the <remote-browser> element. No framework, bundler or npm install is needed in your app.",
+        "totalTime": "PT2M",
+        "tool": [{ "@type": "HowToTool", "name": "Docker or Node.js 18+" }],
+        "step": [
+          {
+            "@type": "HowToStep",
+            "position": 1,
+            "name": "Run the service",
+            "text": "Clone the repository and run ./install.sh, which uses Docker when the daemon is reachable and otherwise falls back to bare-metal Node.",
+            "url": "https://spuds0588.github.io/Easy-Browser-as-a-Service/#embed"
+          },
+          {
+            "@type": "HowToStep",
+            "position": 2,
+            "name": "Load the SDK from that service",
+            "text": "Add a single script tag pointing at the service: <script src=\"http://localhost:8080/sdk.js\"><\/script>. One file, served by the container itself.",
+            "url": "https://spuds0588.github.io/Easy-Browser-as-a-Service/#embed"
+          },
+          {
+            "@type": "HowToStep",
+            "position": 3,
+            "name": "Drop in the element",
+            "text": "Add <remote-browser src=\"https://legacy-crm.internal\" style=\"display:block; width:100%; height:640px\"></remote-browser>. Give it a height: the element's measured size becomes the remote viewport.",
+            "url": "https://spuds0588.github.io/Easy-Browser-as-a-Service/#embed"
+          }
+        ]
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Can it embed a site that blocks iframes with X-Frame-Options or CSP?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes, because nothing is ever framed. The container's Chromium opens the site as a top-level page in its own incognito browser context, renders it to JPEG frames, and streams those to a canvas on your page. X-Frame-Options, CSP frame-ancestors and CORS never come into it."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does this get around CORS?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "It removes the need for CORS rather than bypassing it. Your page never calls the target's API: the container's browser talks to the target directly, and your page only talks to this service over a WebSocket. All of the service's HTTP responses send Access-Control-Allow-Origin: *, so the SDK works from any embedding origin."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What happens when the user reloads the page?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "The session resumes. The SDK stores {sessionId, url, localStorage, cookies} in the host page's localStorage and replays it on connect, and the server keeps the dropped session's browser context alive for RECONNECT_GRACE_MS (60 seconds by default). Reconnecting with the same session id re-attaches that context, so the user stays logged in instead of starting over."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is anything about the session stored on the server?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. The server is stateless: no database and no volume. Session state lives in the host page's localStorage, bridged upload and download files live in the container's tmp directory and are deleted after five minutes, and restarting the container drops the live sessions rather than losing anything durable."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How many sessions can run at once?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "MAX_SESSIONS controls it and defaults to 8. Each session is one incognito browser context inside a single master Chromium process, so memory grows with sessions rather than with browser processes — budget roughly 1 GB of memory per concurrent session. A session beyond the limit is refused with \"Could not start session: capacity reached (N/N) — try again shortly\". To run more than one session on the same host page, give each <remote-browser> its own storage-key attribute."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is it safe to expose the service to the internet?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Not as it ships: there is no authentication, so anything that can reach the port can open a session in a browser that runs on your network and can reach whatever that browser can reach. Put it behind a private network or an authenticated proxy, and restrict the egress of the container."
+            }
+          }
+        ]
+      }
+    </script>
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23050506'/%3E%3Cpath d='M6 25 L16 6 L26 25' fill='none' stroke='%23ff2d8e' stroke-width='4'/%3E%3C/svg%3E"
@@ -314,6 +462,41 @@
       .foot a { color: var(--dim); }
       .foot a:hover { color: var(--pink); }
 
+      /* FAQ — plain, always-visible question/answer pairs, which is what answer
+         engines quote. The FAQPage data in <head> mirrors this text. */
+      .faq { display: grid; gap: 26px 34px; grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr)); margin-top: 38px; }
+      .faq-item { border-left: 6px solid var(--pink); padding-left: 18px; }
+      .faq-item h3 { font-size: 16.5px; }
+      .faq-item p { margin-top: 9px; font-size: 14.5px; }
+
+      /* "robots love us" — heart and arrow are one SVG with a fixed viewBox, so
+         the badge scales as a single unit at any width; the headline is sized in
+         container units so it keeps its ratio to the heart instead of reflowing. */
+      .agents-stage {
+        position: relative; container-type: inline-size;
+        width: 100%; max-width: 560px; margin: 40px auto 0;
+      }
+      .agents-heart { display: block; width: 100%; height: auto; }
+      .ah-shadow { fill: var(--pink); }
+      .ah-body { fill: var(--paper); stroke: var(--white); stroke-width: 1.7; }
+      .ah-arrow { fill: none; stroke: var(--white); stroke-width: 5; stroke-linecap: round; }
+      .ah-head { fill: var(--white); stroke: none; }
+      .agents-title {
+        position: absolute; left: 50%; top: 35%; width: 96%;
+        transform: translate(-50%, -50%) rotate(-4.5deg);
+        margin: 0; text-align: center; white-space: nowrap;
+        font-family: var(--spray); font-weight: 400; text-transform: uppercase;
+        color: var(--pink); line-height: 1;
+        font-size: 34px;
+        font-size: 8.2cqw;
+        filter: url(#spray);
+        text-shadow: 0 0 28px rgba(255, 45, 142, 0.55);
+      }
+      .agents-title a { color: inherit; text-decoration: none; }
+      .agents-title a:hover { color: var(--pink-hot); }
+      .agents-lede { max-width: 64ch; margin: 34px auto 0; text-align: center; }
+      .agents-actions { justify-content: center; margin-top: 30px; }
+
       @media (max-width: 860px) {
         .split { grid-template-columns: minmax(0, 1fr); gap: 34px; }
         section { padding: 58px 0; }
@@ -356,6 +539,8 @@
           <a href="#embed">How it works</a>
           <a href="#features">Features</a>
           <a href="#deploy">Deploy</a>
+          <a href="#faq">FAQ</a>
+          <a href="#agents">Agents</a>
           <a class="btn" href="https://github.com/Spuds0588/Easy-Browser-as-a-Service">GitHub</a>
         </nav>
       </div>
@@ -763,6 +948,111 @@ docker run -d --name rbas -p 8080:8080 \
         </div>
       </section>
 
+      <section id="faq">
+        <div class="wrap">
+          <h2>Questions people ask before the first embed</h2>
+          <p class="lede" style="margin-top: 16px">
+            Short answers to the things that decide whether this is the right tool. The FAQPage
+            structured data in this page's head is generated from exactly this text.
+          </p>
+          <div class="faq">
+            <div class="faq-item">
+              <h3>Can it embed a site that blocks iframes with X-Frame-Options or CSP?</h3>
+              <p>
+                Yes, because nothing is ever framed. The container's Chromium opens the site as a
+                top-level page in its own incognito browser context, renders it to JPEG frames, and
+                streams those to a canvas on your page. X-Frame-Options, CSP
+                <code>frame-ancestors</code> and CORS never come into it.
+              </p>
+            </div>
+            <div class="faq-item">
+              <h3>Does this get around CORS?</h3>
+              <p>
+                It removes the need for CORS rather than bypassing it. Your page never calls the
+                target's API: the container's browser talks to the target directly, and your page
+                only talks to this service over a WebSocket. All of the service's HTTP responses
+                send <code>Access-Control-Allow-Origin: *</code>, so the SDK works from any embedding
+                origin.
+              </p>
+            </div>
+            <div class="faq-item">
+              <h3>What happens when the user reloads the page?</h3>
+              <p>
+                The session resumes. The SDK stores
+                <code>{sessionId, url, localStorage, cookies}</code> in the host page's
+                <code>localStorage</code> and replays it on connect, and the server keeps the dropped
+                session's browser context alive for <code>RECONNECT_GRACE_MS</code> (60 seconds by
+                default). Reconnecting with the same session id re-attaches that context, so the user
+                stays logged in instead of starting over.
+              </p>
+            </div>
+            <div class="faq-item">
+              <h3>Is anything about the session stored on the server?</h3>
+              <p>
+                No. The server is stateless: no database and no volume. Session state lives in the
+                host page's <code>localStorage</code>, bridged upload and download files live in the
+                container's tmp directory and are deleted after five minutes, and restarting the
+                container drops the live sessions rather than losing anything durable.
+              </p>
+            </div>
+            <div class="faq-item">
+              <h3>How many sessions can run at once?</h3>
+              <p>
+                <code>MAX_SESSIONS</code> controls it and defaults to 8. Each session is one
+                incognito browser context inside a single master Chromium process, so memory grows
+                with sessions rather than with browser processes — budget roughly 1 GB of memory per
+                concurrent session. A session beyond the limit is refused with
+                <code>Could not start session: capacity reached (N/N) — try again shortly</code>. To
+                run more than one session on the same host page, give each
+                <code>&lt;remote-browser&gt;</code> its own <code>storage-key</code> attribute.
+              </p>
+            </div>
+            <div class="faq-item">
+              <h3>Is it safe to expose the service to the internet?</h3>
+              <p>
+                Not as it ships: there is no authentication, so anything that can reach the port can
+                open a session in a browser that runs on your network and can reach whatever that
+                browser can reach. Put it behind a private network or an authenticated proxy, and
+                restrict the egress of the container.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="agents">
+        <div class="wrap">
+          <div class="agents-stage">
+            <svg class="agents-heart" viewBox="0 0 520 520" role="img" aria-labelledby="ahTitle">
+              <title id="ahTitle">A heart pierced by an arrow, stamped ROBOTS LOVE US</title>
+              <g transform="translate(14 14)">
+                <path class="ah-shadow" d="M260 430 C 150 330, 60 250, 60 160 C 60 100, 105 60, 160 60 C 205 60, 240 95, 260 130 C 280 95, 315 60, 360 60 C 415 60, 460 100, 460 160 C 460 250, 370 330, 260 430 Z" />
+              </g>
+              <!-- The arrow is drawn behind the heart body, so it reads as pierced
+                   straight through rather than laid on top. -->
+              <path class="ah-arrow" d="M60 460 L471 63" />
+              <path class="ah-arrow" d="M62 458 L46 500 M62 458 L19 473" />
+              <path class="ah-head" d="M500 35 L482 74.5 L460 51.5 Z" />
+              <path class="ah-body" d="M260 430 C 150 330, 60 250, 60 160 C 60 100, 105 60, 160 60 C 205 60, 240 95, 260 130 C 280 95, 315 60, 360 60 C 415 60, 460 100, 460 160 C 460 250, 370 330, 260 430 Z" />
+            </svg>
+            <h2 class="agents-title"><a href="https://spuds0588.github.io/Easy-Browser-as-a-Service/skill.md">Robots Love Us</a></h2>
+          </div>
+          <p class="lede agents-lede">
+            Coding agents and answer engines get their own page.
+            <a href="https://spuds0588.github.io/Easy-Browser-as-a-Service/skill.md">skill.md</a>
+            is one markdown file holding the component API, every endpoint, the configuration table
+            and the failure modes — written to be pasted straight into an agent's context. Everything
+            is indexable, quotable and free to copy, and
+            <a href="https://spuds0588.github.io/Easy-Browser-as-a-Service/llms.txt">llms.txt</a>
+            tells a crawler where to start.
+          </p>
+          <div class="hero-actions agents-actions">
+            <a class="btn" href="https://spuds0588.github.io/Easy-Browser-as-a-Service/skill.md">Read skill.md</a>
+            <a class="btn ghost" href="https://spuds0588.github.io/Easy-Browser-as-a-Service/llms.txt">llms.txt</a>
+          </div>
+        </div>
+      </section>
+
       <section class="cta">
         <div class="wrap">
           <h2>Read the source, run it in a minute.</h2>
@@ -787,6 +1077,8 @@ cd Easy-Browser-as-a-Service &amp;&amp; ./install.sh</code></pre>
         <a href="https://github.com/Spuds0588/Easy-Browser-as-a-Service/blob/main/README.md">README</a>
         <a href="https://github.com/Spuds0588/Easy-Browser-as-a-Service/blob/main/docs/DEPLOY.md">Deployment</a>
         <a href="https://github.com/Spuds0588/Easy-Browser-as-a-Service/blob/main/docs/SECURITY.md">Security</a>
+        <a href="https://spuds0588.github.io/Easy-Browser-as-a-Service/skill.md">skill.md</a>
+        <a href="https://spuds0588.github.io/Easy-Browser-as-a-Service/llms.txt">llms.txt</a>
       </div>
     </footer>
 
