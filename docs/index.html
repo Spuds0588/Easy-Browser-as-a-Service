@@ -860,9 +860,11 @@ console.log(rb.status);        <span class="c">// { ready, sessionId, url }</spa
 rb.endSession();               <span class="c">// fires 'ended', no reconnect</span></code></pre>
           <p class="note">
             Events: <code>ready</code>, <code>navigate</code>, <code>clipboard</code>,
-            <code>download</code>, <code>expired</code> and <code>ended</code>. Mouse, wheel, keyboard,
-            text clipboard and file pickers are wired up for you. <code>endSession()</code> closes the
-            remote browser immediately — no reconnect grace, no idle timer to wait out.
+            <code>download</code>, <code>expired</code> and <code>ended</code>, plus
+            <code>limit</code> and <code>blocked</code> when the resource policy refuses a session or a
+            navigation. Mouse, wheel, keyboard, text clipboard and file pickers are wired up for you.
+            <code>endSession()</code> closes the remote browser immediately — no reconnect grace, no idle
+            timer to wait out.
           </p>
         </div>
       </section>
@@ -992,6 +994,7 @@ docker run -d --name rbas -p 8080:8080 \
               <li><b>Writable /tmp</b> the upload/download bridge lives there and cleans up after itself.</li>
               <li><b>Healthcheck</b> <code>GET /healthz</code>; the image declares it already.</li>
               <li><b>Access tokens</b> sessions need a short-lived token signed with <code>RBAS_KEY</code>; unset, the service generates and logs one at boot.</li>
+              <li><b>Guardrails</b> one concurrent session per address by default (<code>RBAS_MAX_SESSIONS_PER_IP</code>) with a new-session rate on top; pin what may load with <code>RBAS_ALLOWED_DOMAINS</code>.</li>
               <li><b>Memory</b> budget roughly 1 GB per concurrent session; <code>MAX_SESSIONS</code> defaults to 8.</li>
               <li><b>TLS</b> terminate at your proxy — the SDK upgrades to <code>wss://</code> from the origin you give it.</li>
               <li><b>Scaling</b> scale to zero freely; multiple replicas need sticky routing on <code>/ws</code> to keep resume working.</li>

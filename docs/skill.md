@@ -97,9 +97,13 @@ signing key — `curl -X POST -H "Authorization: Bearer $RBAS_KEY" '<origin>/api
 | `download` | `{ url, filename }` | A remote download finished and was triggered on the host page. |
 | `expired` | `{ reason }` | The server reaped the session (idle, hidden or disconnect grace). |
 | `ended` | `{ reason }` | The session was closed on purpose — `endSession()`, or the server at your request. No reconnect follows. |
+| `limit` | `{ message }` | A session was refused by `RBAS_MAX_SESSIONS_PER_IP` or `RBAS_SESSION_RATE`. Not retried automatically. |
+| `blocked` | `{ url, reason, message }` | A top-level navigation was refused by `RBAS_ALLOWED_DOMAINS`; the current page is kept. |
 
-Connection and server errors are shown in the element's built-in overlay (with a **Reload session**
-button), not as events. The element logs `[SDK] …` lines to the console.
+`limit` and `blocked` are the two failures a host must react to, so they fire as events. Every other
+connection or server error — including `unauthorized` and the generic capacity error — is shown in
+the element's built-in overlay (with a **Reload session** button), not as an event. The element logs
+`[SDK] …` lines to the console.
 
 ## Behaviour worth knowing before you build on it
 
@@ -128,7 +132,7 @@ All HTTP responses send `Access-Control-Allow-Origin: *`; `OPTIONS` returns `204
 
 | Method | Path | Token | Purpose |
 | --- | --- | --- | --- |
-| `POST` | `/api/token?ttl=&sub=` | master key, or trusted origin+network | Mint `{token, expiresAt}`. Either present `Authorization: Bearer $RBAS_KEY`, or call it from an origin in `RBAS_TRUSTED_ORIGINS` (a no-backend page minting for itself) |
+| `POST` | `/api/token?ttl=&sub=` | master key, or trusted origin+network | Mint `{token, expiresAt}`. Either present `Authorization: Bearer $RBAS_KEY`, or call it from an origin in `RBAS_TRUSTED_ORIGINS` (a no-backend page minting for itself). Rate-limited per address on its own bucket: `429` + `Retry-After` when exceeded |
 | `GET` | `/healthz` | open | `{ok, uptime, sessions:{active,max}, browser:{connected,version}, tmp}` |
 | `GET` | `/api/sessions` | required | `{active, max, items:[{id,url,visible,idleMs}]}` |
 | `DELETE` | `/api/sessions/:id` | required | End one session immediately, skipping the reconnect grace; `404` if it is gone |
@@ -214,7 +218,7 @@ curl -s localhost:8080/api/sessions     # who is connected, and for how long
 Test suites (need a browser to drive; system Chrome by default):
 
 ```bash
-npm test              # 16 checks: frames, input, clipboard, upload/download, resume, reaping
+npm test              # 22 checks: frames, input, clipboard, upload/download, resume, reaping
 npm run test:multi    # 23 checks: cross-session isolation, capacity, churn
 npm run test:live     # drives real external sites through the product
 npm run test:probe    # browser identity, codecs, fonts, and which real sites block it

@@ -144,6 +144,10 @@ trusted input on either side — they are user-supplied text.
 | `FILE_TTL_MS` | `300000` | Lifetime of bridged files. |
 | `SCREENCAST_QUALITY` / `SCREENCAST_MAX_*` | `70` / `1280×800` | Frame size and quality — the main bandwidth lever. |
 
+`POST /api/token` minting is rate-limited on its own per-address bucket (an independent one, so
+minting a token on page load does not consume the session budget) and answers `429` with
+`Retry-After` when exceeded.
+
 The per-IP controls bound the common case, but they are not a complete defence: a client can rotate
 source addresses, and `MAX_SESSIONS` still caps the whole instance. `/ws` frames are capped at 64 MB
 and uploads at `MAX_UPLOAD`, but there is no request-*rate* limit on the socket itself. If you run

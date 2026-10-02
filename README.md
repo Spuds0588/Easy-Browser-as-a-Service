@@ -140,9 +140,13 @@ All are `CustomEvent`s dispatched on the element.
 | `download` | `{ url, filename }` | A remote download finished and was triggered on the host page. |
 | `expired` | `{ reason }` | The server reaped the session (idle, hidden, or disconnect grace elapsed). |
 | `ended` | `{ reason }` | The session was closed on purpose — by `endSession()`, or by the server at your request. No reconnect follows. |
+| `limit` | `{ message }` | A session was refused by the per-address resource policy (`RBAS_MAX_SESSIONS_PER_IP` or `RBAS_SESSION_RATE`). Not retried automatically. |
+| `blocked` | `{ url, reason, message }` | A top-level navigation was refused by `RBAS_ALLOWED_DOMAINS`; the current page is kept. |
 
-Connection and server errors are not events: they are shown in the element's built-in overlay,
-which offers a **Reload session** button. The element also logs `[SDK] …` lines to the console.
+`limit` and `blocked` are the two failures a host must react to, so they fire as events. Every other
+connection or server error — including `unauthorized` and the generic capacity error — is shown only
+in the element's built-in overlay, which offers a **Reload session** button. The element also logs
+`[SDK] …` lines to the console.
 
 ### Input, clipboard and files
 
@@ -274,6 +278,10 @@ mint browser contexts in a loop; reconnects and deep-link resumes never count ag
 controls count from the client IP, so behind a reverse proxy set `RBAS_TRUST_PROXY` or every user
 will look like the proxy and share one bucket.
 
+`POST /api/token` is limited too, but on its **own** bucket, so a page that mints a token on every
+load never eats into its owner's session budget. Past the limit it answers `429` with a
+`Retry-After` header instead of minting.
+
 ### What the remote browser may load
 
 The remote browser is a browser. Left open it can reach anything, so if you are embedding one app or
@@ -365,7 +373,7 @@ All HTTP responses carry `Access-Control-Allow-Origin: *` so the SDK works from 
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/token` | Mint a short-lived access token. Either present the master key (`Authorization: Bearer $RBAS_KEY`), or call it from a trusted origin + network. See [Access control](#access-control). |
+| `POST` | `/api/token` | Mint a short-lived access token. Either present the master key (`Authorization: Bearer $RBAS_KEY`), or call it from a trusted origin + network. Rate-limited per address on its own bucket (`429` + `Retry-After` when exceeded). See [Access control](#access-control). |
 | `GET` | `/healthz` | Liveness/readiness probe: `{ok, uptime, sessions:{active,max}, browser:{connected,version}, tmp}`. Also used by the image's `HEALTHCHECK`. |
 | `GET` | `/api/sessions` | **token** — Debug/ops view of live sessions: `{active, max, items:[{id,url,visible,idleMs}]}`. |
 | `DELETE` | `/api/sessions/:id` | **token** — End one session immediately (no reconnect grace). `404` if it is already gone. |
@@ -468,7 +476,7 @@ disallowed host.
 `npm test` runs `test/e2e.js`: it starts the service and two fixture origins, launches a real
 browser, and drives the product end to end — screencast frames painted to the canvas, mouse and
 keyboard passthrough, clipboard both ways, the upload and download bridges, deep-link resume,
-disconnect-grace reaping and idle expiry (16 checks; `test/idle-probe.js` probes the last one
+disconnect-grace reaping and idle expiry (22 checks; `test/idle-probe.js` probes the last one
 standalone). The same suite can target an already-running deployment:
 
 ```bash
