@@ -162,22 +162,42 @@
       .facts li { font-family: var(--mono); font-size: 12.5px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.03em; }
       .facts li::before { content: "\2736"; color: var(--pink); margin-right: 8px; }
 
-      /* architecture diagram */
+      /* architecture diagram — drawn once at a fixed size and scaled whole */
       .diagram { margin: 46px 0 0; }
-      .diagram-scroll {
-        overflow-x: auto; border: 3px solid var(--white); background: #08080a;
+      .diagram-frame {
+        --dg-s: 1;
+        overflow: hidden; border: 3px solid var(--white); background: #08080a;
         padding: 14px; box-shadow: 8px 8px 0 var(--pink);
+        height: calc(400px * var(--dg-s) + 34px);
       }
-      .diagram-scroll svg { display: block; width: 100%; min-width: 640px; height: auto; }
-      .diagram text { font-family: var(--mono); fill: #a4a4ad; }
+      .diagram-stage {
+        width: 940px; height: 400px;
+        transform: scale(var(--dg-s)); transform-origin: top left;
+      }
+      .diagram-stage svg { display: block; width: 940px; height: 400px; }
+      @media (max-width: 1021px) { .diagram-frame { --dg-s: 0.9; } }
+      @media (max-width: 927px)  { .diagram-frame { --dg-s: 0.8; } }
+      @media (max-width: 833px)  { .diagram-frame { --dg-s: 0.7; } }
+      @media (max-width: 739px)  { .diagram-frame { --dg-s: 0.6; } }
+      @media (max-width: 645px)  { .diagram-frame { --dg-s: 0.5; } }
+      @media (max-width: 551px)  { .diagram-frame { --dg-s: 0.42; } }
+      @media (max-width: 480px)  { .diagram-frame { --dg-s: 0.33; } }
+      @media (max-width: 389px)  { .diagram-frame { --dg-s: 0.27; } }
+      @media (max-width: 332px)  { .diagram-frame { --dg-s: 0.23; } }
+
+      .diagram text { font-family: var(--mono); fill: #a4a4ad; font-size: 18px; }
       .dg-center { text-anchor: middle; }
+      .dg-small { font-size: 13px; }
       .dg-window { fill: #0d0d10; stroke: var(--white); stroke-width: 2.5; }
       .dg-container { fill: #0d0d10; stroke: var(--white); stroke-width: 2.5; stroke-dasharray: 10 8; }
       .dg-element { fill: #101014; stroke: var(--pink); stroke-width: 2; stroke-dasharray: 7 6; }
       .dg-bar { fill: #3a3a42; }
       .dg-bar-pink { fill: var(--pink); }
-      .dg-tab { fill: #121216; stroke: var(--line); stroke-width: 2; }
-      .dg-browser { fill: #141419; stroke: var(--white); stroke-width: 3; }
+      .dg-seg-w { fill: #f4f4f5; }
+      .dg-seg-l { fill: #c9c9d0; }
+      .dg-seg-g { fill: #6f6f78; }
+      .dg-logo-center { fill: var(--pink); }
+      .dg-logo-ring { fill: none; stroke: var(--white); stroke-width: 2; }
       .dg-icon { fill: none; stroke: var(--white); stroke-width: 2.5; }
       .dg-icon-dim { fill: none; stroke: var(--faint); stroke-width: 2; }
       .dg-block { fill: none; stroke: var(--pink); stroke-width: 3.5; }
@@ -393,8 +413,9 @@
           </div>
 
           <figure class="diagram">
-            <div class="diagram-scroll">
-              <svg viewBox="0 0 940 400" role="img" aria-labelledby="dgTitle dgDesc" preserveAspectRatio="xMidYMid meet">
+            <div class="diagram-frame">
+              <div class="diagram-stage">
+                <svg viewBox="0 0 940 400" role="img" aria-labelledby="dgTitle dgDesc" preserveAspectRatio="xMidYMid meet">
                 <title id="dgTitle">Your page and the container's browser swap screens for input</title>
                 <desc id="dgDesc">
                   Diagram. On the left, a browser window is the host page; the dashed pink box inside it is
@@ -433,35 +454,26 @@
                 <rect class="dg-icon" x="291" y="108" width="28" height="20" rx="3" />
                 <path class="dg-icon" d="M305 128 V136 M297 136 H313" />
                 <path class="dg-flow" d="M350 180 H282" marker-end="url(#ahW)" />
-                <text class="dg-center" x="305" y="164" font-size="11">screen</text>
+                <text class="dg-center dg-small" x="305" y="164">screen</text>
 
                 <!-- input back -->
                 <rect class="dg-icon" x="294" y="250" width="22" height="34" rx="11" />
                 <path class="dg-icon" d="M305 250 V266" />
                 <path class="dg-flow-pink" d="M260 322 H342" marker-end="url(#ahP)" />
-                <text class="dg-center" x="301" y="304" font-size="11">input</text>
+                <text class="dg-center dg-small" x="301" y="304">input</text>
 
-                <!-- the docker container -->
+                <!-- the docker container: just the browser inside -->
                 <rect class="dg-container" x="350" y="50" width="220" height="280" rx="14" />
-                <rect class="dg-browser" x="412" y="106" width="96" height="76" rx="9" />
-                <path class="dg-rule" d="M412 128 H508" />
-                <circle class="dg-dot-pink" cx="426" cy="117" r="3.5" />
-                <circle class="dg-dot" cx="438" cy="117" r="3.5" />
-                <circle class="dg-dot" cx="450" cy="117" r="3.5" />
-                <rect class="dg-icon-dim" x="462" y="112" width="40" height="10" rx="5" />
-                <rect class="dg-bar-pink" x="426" y="142" width="40" height="12" rx="6" />
-                <rect class="dg-bar" x="426" y="164" width="62" height="8" rx="4" />
-                <rect class="dg-tab" x="380" y="232" width="76" height="40" rx="8" />
-                <circle class="dg-dot-pink" cx="392" cy="244" r="3.5" />
-                <text class="dg-center" x="424" y="258">A</text>
-                <rect class="dg-tab" x="464" y="232" width="76" height="40" rx="8" />
-                <circle class="dg-dot-pink" cx="476" cy="244" r="3.5" />
-                <text class="dg-center" x="508" y="258">B</text>
+                <path class="dg-seg-w" d="M460 142 A48 48 0 0 1 501.6 214 L476.5 199.5 A19 19 0 0 0 460 171 Z" />
+                <path class="dg-seg-l" d="M501.6 214 A48 48 0 0 1 418.4 214 L443.6 199.5 A19 19 0 0 0 476.5 199.5 Z" />
+                <path class="dg-seg-g" d="M418.4 214 A48 48 0 0 1 460 238 L460 209 A19 19 0 0 0 443.6 199.5 Z" />
+                <circle class="dg-logo-center" cx="460" cy="190" r="19" />
+                <circle class="dg-logo-ring" cx="460" cy="190" r="48" />
                 <text class="dg-center" x="460" y="356">Docker</text>
 
                 <!-- container reaches the site directly -->
                 <path class="dg-flow" d="M570 200 H644" marker-end="url(#ahW)" />
-                <text class="dg-center" x="607" y="186" font-size="11">HTTP</text>
+                <text class="dg-center dg-small" x="607" y="186">HTTP</text>
 
                 <!-- their site: refuses to be framed -->
                 <rect class="dg-window" x="650" y="90" width="250" height="240" rx="12" />
@@ -474,7 +486,8 @@
                 <rect class="dg-icon-dim" x="740" y="266" width="110" height="40" rx="6" stroke-dasharray="6 5" />
                 <path class="dg-icon-dim" d="M740 266 L850 306 M850 266 L740 306" />
                 <text class="dg-center" x="775" y="356">their site</text>
-              </svg>
+                </svg>
+              </div>
             </div>
             <figcaption>
               Your page draws nothing itself: it paints the screens the container sends and hands back
