@@ -87,10 +87,12 @@ Useful flags:
 ./install.sh --local                # force bare-metal Node (runs in the foreground)
 ```
 
-Embed it in your own page — the demo page itself (served at `/demo.html`) is the working example:
+Embed it in your own page — the demo page itself (served at `/demo.html`) is the working example.
+`install.sh` prints a signing key and a token you can paste in while you experiment; in production
+mint a short-lived token per page load (see [Access control](#access-control)):
 
 ```html
-<script src="http://localhost:8080/sdk.js"></script>
+<script src="http://localhost:8080/sdk.js?token=SHORT_LIVED_TOKEN"></script>
 <remote-browser src="https://example.com" style="width:100%;height:640px"></remote-browser>
 ```
 
@@ -275,19 +277,20 @@ Browser discovery order: `PUPPETEER_EXECUTABLE_PATH` → `CHROME_PATH` → `/usr
 ## HTTP and WebSocket endpoints
 
 All HTTP responses carry `Access-Control-Allow-Origin: *` so the SDK works from any embedding origin;
-`OPTIONS` is answered with `204`.
+`OPTIONS` is answered with `204`. Routes marked **token** need a valid access token
+([Access control](#access-control)); the rest are open.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/token` | Exchange the master key (`Authorization: Bearer $RBAS_KEY`) for a short-lived access token. Guarded by the key, not a token. |
 | `GET` | `/healthz` | Liveness/readiness probe: `{ok, uptime, sessions:{active,max}, browser:{connected,version}, tmp}`. Also used by the image's `HEALTHCHECK`. |
-| `GET` | `/api/sessions` | Debug/ops view of live sessions: `{active, max, items:[{id,url,visible,idleMs}]}`. |
-| `POST` | `/upload?name=<filename>` | Raw request body is stored in the container's tmp dir; returns `{id, filename, bytes}`. Used by the SDK's upload bridge. |
-| `GET` | `/download/:id` | Serves a captured remote download as an attachment until `FILE_TTL_MS` elapses, then `404`. |
+| `GET` | `/api/sessions` | **token** — Debug/ops view of live sessions: `{active, max, items:[{id,url,visible,idleMs}]}`. |
+| `POST` | `/upload?name=<filename>` | **token** — Raw request body is stored in the container's tmp dir; returns `{id, filename, bytes}`. Used by the SDK's upload bridge. |
+| `GET` | `/download/:id` | **token** (`?token=`) — Serves a captured remote download as an attachment until `FILE_TTL_MS` elapses, then `404`. |
 | `GET` | `/sdk.js` | The web component. Serve this to embedding pages. |
-| `GET` | `/demo.html` | Bundled demo harness. |
+| `GET` | `/demo.html` | Bundled demo harness; a working token is injected into its `sdk.js` tag. |
 | `GET` | `/` | `302` redirect to `/demo.html`. |
-| `GET` | `/ws` (WebSocket) | Session channel — this is the upgrade endpoint the SDK opens. |
+| `GET` | `/ws` (WebSocket) | **token** (in the first `init`) — Session channel — this is the upgrade endpoint the SDK opens. |
 
 ### WebSocket message protocol
 

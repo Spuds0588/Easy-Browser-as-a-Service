@@ -80,14 +80,14 @@
             "@type": "HowToStep",
             "position": 1,
             "name": "Run the service",
-            "text": "Clone the repository and run ./install.sh, which uses Docker when the daemon is reachable and otherwise falls back to bare-metal Node.",
+            "text": "Clone the repository and run ./install.sh, which uses Docker when the daemon is reachable and otherwise falls back to bare-metal Node. It prints the access-control signing key it generated and a ready-to-paste embed snippet that already contains a token.",
             "url": "https://spuds0588.github.io/Easy-Browser-as-a-Service/#embed"
           },
           {
             "@type": "HowToStep",
             "position": 2,
-            "name": "Load the SDK from that service",
-            "text": "Add a single script tag pointing at the service: <script src=\"http://localhost:8080/sdk.js?token=ACCESS_TOKEN\"><\/script>. One file, served by the container itself. The short-lived token is minted from your server's signing key and is required before any browser session is opened.",
+            "name": "Mint a token, then load the SDK",
+            "text": "Mint a short-lived token server-side by exchanging your signing key at POST /api/token, or sign one yourself with HMAC-SHA256. Then load the SDK with it: <script src=\"http://localhost:8080/sdk.js?token=ACCESS_TOKEN\"><\/script>, one file served by the container itself. The service opens no browser without a valid token, and tokens expire, so mint one per page load rather than hard-coding it.",
             "url": "https://spuds0588.github.io/Easy-Browser-as-a-Service/#embed"
           },
           {
@@ -393,6 +393,8 @@
       .dg-dot-pink { fill: var(--pink); }
       .dg-flow { fill: none; stroke: var(--white); stroke-width: 4; }
       .dg-flow-pink { fill: none; stroke: var(--pink); stroke-width: 4; }
+      .dg-auth-badge { fill: #101014; stroke: var(--pink); stroke-width: 2; }
+      .dg-auth-text { fill: var(--pink); font-size: 12.5px; }
       figcaption { font-size: 12.5px; color: var(--faint); margin-top: 18px; font-family: var(--mono); }
 
       /* cards */
@@ -666,7 +668,9 @@
                   glyph on a white arrow shows screens travelling from the container to the element; a
                   mouse glyph on a pink arrow shows clicks and keys travelling back. On the right, a second
                   browser window is the target site, marked with a blocked sign because it refuses to be
-                  framed; the container's browser reaches it directly.
+                  framed; the container's browser reaches it directly. At the top of the container a pink arrow labelled "token"
+                  carries a short-lived signed token from the element into the container, whose box is labelled "signed token";
+                  without a valid token the container opens no browser at all.
                 </desc>
                 <defs>
                   <marker id="ahW" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
@@ -704,8 +708,14 @@
                 <path class="dg-flow-pink" d="M260 322 H342" marker-end="url(#ahP)" />
                 <text class="dg-center dg-small" x="301" y="304">input</text>
 
+                <!-- the token rides the first ws message; no token, no session -->
+                <path class="dg-flow-pink" d="M264 96 H344" marker-end="url(#ahP)" />
+                <text class="dg-center dg-small dg-auth-text" x="304" y="88">token</text>
+
                 <!-- the docker container: just the browser inside -->
                 <rect class="dg-container" x="350" y="50" width="220" height="280" rx="14" />
+                <rect class="dg-auth-badge" x="385" y="64" width="150" height="26" rx="13" />
+                <text class="dg-center dg-auth-text" x="460" y="82">signed token</text>
                 <path class="dg-seg-w" d="M460 142 A48 48 0 0 1 501.6 214 L476.5 199.5 A19 19 0 0 0 460 171 Z" />
                 <path class="dg-seg-l" d="M501.6 214 A48 48 0 0 1 418.4 214 L443.6 199.5 A19 19 0 0 0 476.5 199.5 Z" />
                 <path class="dg-seg-g" d="M418.4 214 A48 48 0 0 1 460 238 L460 209 A19 19 0 0 0 443.6 199.5 Z" />
@@ -734,7 +744,9 @@
             <figcaption>
               Your page draws nothing itself: it paints the screens the container sends and hands back
               your clicks and keys. The container's browser is the one that talks to their site, so CORS
-              and X-Frame-Options never enter into it.
+              and X-Frame-Options never enter into it. The channel is authenticated too: the element
+              sends a short-lived signed token in its first message, and the container opens no browser
+              without a valid one.
             </figcaption>
           </figure>
         </div>
@@ -757,7 +769,9 @@ cd Easy-Browser-as-a-Service
 ./install.sh</code></pre>
               <p class="note">
                 Docker is used when its daemon is reachable, otherwise Node runs it on the machine.
-                It prints <code>Up: http://localhost:8080/demo.html</code> when the health check passes.
+                It prints <code>Up: http://localhost:8080/demo.html</code> when the health check passes,
+                along with the access-control signing key it generated and a ready-to-paste embed
+                snippet that already has a token in it.
               </p>
             </div>
           </div>
@@ -765,12 +779,25 @@ cd Easy-Browser-as-a-Service
           <div class="step">
             <div class="step-num">2</div>
             <div>
-              <h3>Load the SDK from that service</h3>
-              <pre><button class="copy" data-copy="s2" type="button">Copy</button><code id="s2">&lt;script src="http://localhost:8080/sdk.js?token=ACCESS_TOKEN"&gt;&lt;/script&gt;</code></pre>
+              <h3>Mint a token, then load the SDK</h3>
+              <pre><button class="copy" data-copy="s2" type="button">Copy</button><code id="s2"><span class="c"># trade your signing key for a short-lived token</span>
+curl -sX POST -H "Authorization: Bearer $RBAS_KEY" \
+  "http://localhost:8080/api/token?ttl=15m"
+<span class="c"># {"token":"v1.eyJ…"}   (or: node server/token.js --ttl 15m)</span></code></pre>
+              <pre><button class="copy" data-copy="s2b" type="button">Copy</button><code id="s2b"><span class="c">&lt;!-- in your page: tokens expire, so mint one per load --&gt;</span>
+&lt;script&gt;
+  const SERVICE = 'http://localhost:8080';
+  fetch('/rbas-token').then(r =&gt; r.json()).then(({ token }) =&gt; {
+    const s = document.createElement('script');
+    s.src = `${SERVICE}/sdk.js?token=${encodeURIComponent(token)}`;
+    document.head.append(s);
+  });
+&lt;/script&gt;</code></pre>
               <p class="note">
-                One file, served by the container itself. Point it at your own host in production, and
-                mint the short-lived <code>token</code> from your server's signing key — the service
-                will not open a browser without one.
+                One file, served by the container itself. The service opens no browser without a valid
+                token, and the token is short-lived — so mint it in your backend (with <code>RBAS_KEY</code>,
+                or your own HMAC-SHA256) and inject the tag at runtime rather than pasting it into the
+                HTML. The bundled demo page at <code>/demo.html</code> already gets one injected for you.
               </p>
             </div>
           </div>
