@@ -132,7 +132,8 @@ class SessionManager {
     if (existing && !existing.closed) {
       this.logger.log(`[SESSIONS] resuming ${existing.id} (deep-link resilience)`);
       this.cancelGrace(existing);
-      existing.attach(connection, { resumed: true });
+      existing.attach(connection);
+      existing.sendReady(true);
       // The live context is authoritative — never replay stale host state over
       // it. Instead push the live state back so the host catches up.
       existing.emitState({});
@@ -154,16 +155,24 @@ class SessionManager {
     });
 
     this.wireSession(session);
+    this.sessions.set(id, session);
+    // Bind the socket before bootstrapping so setup-time messages reach the
+    // client, and register the session first so a mid-bootstrap disconnect is
+    // still reapable.
+    session.attach(connection);
 
     try {
       await session.bootstrap({ url: msg.url, viewport: msg.viewport, state: msg.state });
     } catch (err) {
       await session.close().catch(() => {});
+      this.forget(session);
       throw err;
     }
 
-    this.sessions.set(id, session);
-    session.attach(connection, { resumed: false });
+    session.sendReady(false);
+    // The client may have vanished while the page was loading; start the
+    // disconnect grace ourselves or the context would linger unreaped.
+    if (!session.sink) this.beginGrace(session);
     this.logger.log(`[SESSIONS] created ${id} (active=${this.sessions.size})`);
     return session;
   }

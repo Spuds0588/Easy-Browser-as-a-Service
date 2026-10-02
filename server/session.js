@@ -43,6 +43,7 @@ class RemoteSession extends EventEmitter {
     this.client = null;
     this.sink = null;
     this.closed = false;
+    this.navigated = false;
     this.visible = true;
     this.lastActivity = Date.now();
     this.lastUrl = 'about:blank';
@@ -83,8 +84,10 @@ class RemoteSession extends EventEmitter {
 
     if (this.state.cookies.length) await this.applyCookies(this.state.cookies);
     this.targetUrl = url || 'about:blank';
-    await this.navigate(this.targetUrl);
-    await this.startScreencast(vp);
+    // Only screencast a page we actually reached; otherwise the client would get
+    // a confusing "Not attached to an active page" on top of the real error.
+    this.navigated = await this.navigate(this.targetUrl);
+    if (this.navigated) await this.startScreencast(vp);
 
     this.startStoragePoll();
     this.startDownloadPoll();
@@ -93,17 +96,27 @@ class RemoteSession extends EventEmitter {
     return this;
   }
 
-  attach(sink, { resumed = true } = {}) {
+  /**
+   * Bind a socket. Must happen BEFORE bootstrap for a new session so that
+   * messages produced while the page is being set up (the navigation result,
+   * the resolved URL) are not dropped on the floor.
+   */
+  attach(sink) {
     this.sink = sink;
     sink.on('close', () => this.detach(sink));
-    this.send({ type: 'ready', sessionId: this.id, url: this.lastUrl, resumed });
     // A fresh socket means a visible client: make sure frames are flowing again
-    // (a reload may have hidden us and stopped the screencast).
+    // (a reload may have hidden us and stopped the screencast). Skipped while a
+    // brand new session is still bootstrapping — bootstrap starts it itself.
+    if (!this.page || !this.screencastSizes) return;
     if (!this.visible) {
       this.setVisibility(true).catch(() => {});
-    } else if (this.screencastSizes) {
+    } else {
       this.startScreencast(this.screencastSizes).catch(() => {});
     }
+  }
+
+  sendReady(resumed) {
+    this.send({ type: 'ready', sessionId: this.id, url: this.lastUrl, resumed, navigated: this.navigated });
   }
 
   detach(sink) {
@@ -349,15 +362,19 @@ class RemoteSession extends EventEmitter {
   // --------------------------------------------------------------- operations
 
   async navigate(url, { reload = false } = {}) {
-    if (!this.page) return;
+    if (!this.page) return false;
     this.targetUrl = url;
     try {
       this.logger.log(`[SESSION ${this.id}] navigate -> ${url}`);
       await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: this.config.navigationTimeoutMs });
+      this.navigated = true;
+      return true;
     } catch (err) {
       this.logger.warn(`[SESSION ${this.id}] navigation issue: ${err.message}`);
       this.send({ type: 'error', message: `Navigation problem: ${err.message}` });
       if (reload) throw err;
+      this.navigated = false;
+      return false;
     }
   }
 

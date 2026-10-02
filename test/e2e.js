@@ -49,8 +49,9 @@ const HOST_ORIGIN = `http://127.0.0.1:${HOST_PORT}`;
 const FIXTURE_BIND = process.env.E2E_BIND || '127.0.0.1';
 const RUN_IDLE_TEST = SPAWN_SERVICE && process.env.E2E_SKIP_IDLE !== '1';
 const ONLY = process.env.E2E_ONLY || '';
-// A deployment using the shipped default grace window (60s) needs longer here.
-const GRACE_WAIT_MS = Number(process.env.E2E_GRACE_WAIT_MS || 20000);
+// Self-spawned services run with a 4s grace; an external deployment normally
+// uses the shipped 60s default, so give it room unless told otherwise.
+const GRACE_WAIT_MS = Number(process.env.E2E_GRACE_WAIT_MS || (SPAWN_SERVICE ? 20000 : 90000));
 
 const results = [];
 let failures = 0;
