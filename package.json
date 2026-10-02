@@ -11,7 +11,9 @@
     "start": "node server/index.js",
     "dev": "node server/index.js",
     "test": "node test/e2e.js",
-    "test:multi": "node test/multi-session.js"
+    "test:multi": "node test/multi-session.js",
+    "test:live": "node test/live-drive.js",
+    "test:probe": "node test/robustness-probe.js"
   },
   "dependencies": {
     "express": "^5.2.1",

@@ -550,9 +550,11 @@ class RemoteSession extends EventEmitter {
   }
 
   async dispatchKey(event = {}) {
+    const key = event.key || '';
+    const type = event.type || 'keyDown';
     const params = {
-      type: event.type || 'keyDown',
-      key: event.key || '',
+      type,
+      key,
       code: event.code || '',
       windowsVirtualKeyCode: Number(event.keyCode) || 0,
       nativeVirtualKeyCode: Number(event.keyCode) || 0,
@@ -561,6 +563,17 @@ class RemoteSession extends EventEmitter {
     };
     if (event.text) params.text = event.text;
     if (event.unmodifiedText) params.unmodifiedText = event.unmodifiedText;
+    // Chromium only runs implicit form submission — and only inserts a newline
+    // into a textarea — when Enter arrives as a character event. The SDK sends
+    // every non-printable key as rawKeyDown with no text, so a bare Enter fires
+    // keydown/keypress but does nothing: search boxes never submit, logins never
+    // submit, and Enter in a textarea inserts nothing. Carry the carriage return
+    // ourselves on the key-down half; the key-up is left alone.
+    if ((key === 'Enter' || key === 'Return') && type !== 'keyUp' && !params.text) {
+      params.text = '\r';
+      params.unmodifiedText = '\r';
+      if (params.type === 'rawKeyDown') params.type = 'keyDown';
+    }
     try {
       await this.client.send('Input.dispatchKeyEvent', params);
     } catch (err) {

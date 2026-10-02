@@ -145,4 +145,4 @@ class BrowserManager {
   }
 }
 
-module.exports = { BrowserManager, resolveExecutablePath, discoverCachedChrome };
+module.exports = { BrowserManager, resolveExecutablePath, discoverCachedChrome, BASE_ARGS };
