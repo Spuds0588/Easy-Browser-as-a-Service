@@ -1,0 +1,35 @@
+# Deploy: fly launch --copy-config --no-deploy && fly deploy
+# The service listens on 8080 and needs WebSockets enabled (http_service below).
+app = "easy-browser-as-a-service"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  # 2GB of RAM must host one Chrome plus every incognito context in it.
+  MAX_SESSIONS = "4"
+  # Aggressive reaping keeps serverless containers cheap.
+  IDLE_TIMEOUT_MS = "300000"
+  HIDDEN_TIMEOUT_MS = "120000"
+  RECONNECT_GRACE_MS = "60000"
+  SCREENCAST_MAX_WIDTH = "1280"
+  SCREENCAST_MAX_HEIGHT = "800"
+  SCREENCAST_QUALITY = "60"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 100
+    soft_limit = 80
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"

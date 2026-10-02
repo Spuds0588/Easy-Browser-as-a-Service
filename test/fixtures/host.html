@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Host CRM (embedding app)</title>
+    <style>
+      html, body { margin: 0; background: #1b2432; color: #e6ecf5; font: 14px system-ui, sans-serif; }
+      remote-browser { display: block; width: 1024px; height: 700px; }
+    </style>
+  </head>
+  <body>
+    <script src="{{SERVICE_ORIGIN}}/sdk.js"></script>
+    <remote-browser id="rb" src="{{TARGET_ORIGIN}}/target.html" server="{{SERVICE_ORIGIN}}"></remote-browser>
+    <script>
+      // Test-only hooks: the e2e harness reads these from the host page.
+      window.__rb = document.getElementById('rb');
+      window.__rbEvents = [];
+      ['ready', 'navigate', 'download', 'clipboard'].forEach((type) => {
+        window.__rb.addEventListener(type, (event) => window.__rbEvents.push({ type, detail: event.detail }));
+      });
+    </script>
+  </body>
+</html>

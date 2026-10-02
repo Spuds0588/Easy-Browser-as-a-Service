@@ -1,0 +1,24 @@
+services:
+  browser-as-a-service:
+    build: .
+    image: easy-browser-as-a-service:latest
+    container_name: easy-browser-as-a-service
+    restart: unless-stopped
+    # Host port is configurable: PORT=9000 docker compose up -d --build
+    ports:
+      - "${PORT:-8080}:8080"
+    # Chromium is memory hungry; the shared memory mount avoids renderer crashes.
+    shm_size: "1gb"
+    # Lets an embedded session reach a service running on the Docker host
+    # (e.g. src="http://host.docker.internal:3000") during local development.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      PORT: "8080"
+      MAX_SESSIONS: "8"
+      IDLE_TIMEOUT_MS: "600000"
+      HIDDEN_TIMEOUT_MS: "180000"
+      RECONNECT_GRACE_MS: "60000"
+      SCREENCAST_MAX_WIDTH: "1280"
+      SCREENCAST_MAX_HEIGHT: "800"
+      SCREENCAST_QUALITY: "70"

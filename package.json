@@ -1,0 +1,20 @@
+{
+  "name": "easy-browser-as-a-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stateless, embeddable Browser-as-a-Service: stream a remote Chromium into any web app via a <remote-browser> web component.",
+  "main": "server/index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js",
+    "test": "node test/e2e.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "puppeteer": "^23.11.1",
+    "ws": "^8.22.0"
+  }
+}

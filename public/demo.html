@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Easy Browser-as-a-Service — demo</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: #0b0e14; color: #e6ecf5;
+        font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+        display: flex; flex-direction: column; height: 100vh;
+      }
+      header {
+        display: flex; gap: 8px; align-items: center; padding: 12px 16px;
+        border-bottom: 1px solid #1c2431; background: #0e131c;
+      }
+      header h1 { font-size: 15px; margin: 0 12px 0 0; font-weight: 600; white-space: nowrap; }
+      input[type="url"] {
+        flex: 1; min-width: 200px; background: #131a26; color: #e6ecf5;
+        border: 1px solid #263243; border-radius: 6px; padding: 8px 10px; font: inherit;
+      }
+      button {
+        background: #1c80ff; color: #fff; border: 0; border-radius: 6px;
+        padding: 8px 14px; font: inherit; cursor: pointer;
+      }
+      button.secondary { background: #1b2432; border: 1px solid #2f3a4d; }
+      main { flex: 1; display: flex; min-height: 0; }
+      remote-browser { flex: 1; min-width: 0; }
+      aside {
+        width: 320px; border-left: 1px solid #1c2431; background: #0e131c;
+        padding: 12px; overflow: auto; font-family: ui-monospace, monospace; font-size: 12px;
+      }
+      aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #7b8aa1; margin: 0 0 8px; }
+      #log div { padding: 2px 0; border-bottom: 1px solid #151d29; word-break: break-word; }
+      .hint { color: #7b8aa1; margin-top: 10px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Easy Browser-as-a-Service</h1>
+      <input id="url" type="url" placeholder="https://example.com" />
+      <button id="go">Go</button>
+      <button id="reload" class="secondary">Reload</button>
+    </header>
+    <main>
+      <remote-browser src="https://example.com"></remote-browser>
+      <aside>
+        <h2>Session log</h2>
+        <div id="log"></div>
+        <p class="hint">
+          Reloading this page should <strong>resume</strong> the same remote session
+          (deep-link resilience). State is stored in this page's localStorage.
+        </p>
+      </aside>
+    </main>
+    <script src="/sdk.js"></script>
+    <script>
+      const element = document.querySelector('remote-browser');
+      const log = document.getElementById('log');
+      const urlInput = document.getElementById('url');
+      const params = new URLSearchParams(location.search);
+
+      if (params.get('src')) {
+        element.setAttribute('src', params.get('src'));
+        urlInput.value = params.get('src');
+      }
+
+      function write(line) {
+        const row = document.createElement('div');
+        row.textContent = `${new Date().toLocaleTimeString()} ${line}`;
+        log.appendChild(row);
+        log.scrollTop = log.scrollHeight;
+      }
+
+      ['ready', 'navigate', 'download', 'clipboard'].forEach((type) => {
+        element.addEventListener(type, (event) => write(`${type}: ${JSON.stringify(event.detail)}`));
+      });
+
+      document.getElementById('go').addEventListener('click', () => {
+        if (urlInput.value) element.navigate(urlInput.value);
+      });
+      document.getElementById('reload').addEventListener('click', () => element.reload());
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && document.activeElement === urlInput && urlInput.value) element.navigate(urlInput.value);
+      });
+      write('demo ready — waiting for SDK');
+    </script>
+  </body>
+</html>

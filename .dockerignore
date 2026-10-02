@@ -1,0 +1,8 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.freebuff
+test
+*.md
+!PRD-Browser_as_a_service_docker.md
