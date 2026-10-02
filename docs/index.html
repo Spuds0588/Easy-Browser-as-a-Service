@@ -91,14 +91,10 @@
       }
       .nav-inner { display: flex; align-items: center; gap: 20px; height: 66px; }
       .brand {
-        display: flex; align-items: center; gap: 10px; color: var(--white); font-family: var(--display);
+        display: flex; align-items: center; color: var(--white); font-family: var(--display);
         text-transform: uppercase; font-size: 15px; letter-spacing: 0.01em; white-space: nowrap;
       }
       .brand:hover { color: var(--white); }
-      .brand-mark {
-        width: 26px; height: 26px; background: var(--pink); color: var(--black);
-        display: grid; place-items: center; font-family: var(--display); font-size: 14px; font-weight: 900;
-      }
       nav.links { margin-left: auto; display: flex; align-items: center; gap: 22px; }
       nav.links a { color: var(--dim); font-size: 13.5px; text-transform: uppercase; letter-spacing: 0.08em; }
       nav.links a:hover { color: var(--pink); }
@@ -314,7 +310,6 @@
         .spec b { min-width: 0; display: block; }
         .spec li { flex-direction: column; gap: 2px; }
         .brand { font-size: 12.5px; }
-        .brand-mark { width: 24px; height: 24px; font-size: 13px; }
         .nav-inner { height: 60px; gap: 12px; }
       }
       /* very narrow phones: let the wordmark shrink instead of pushing the nav out */
@@ -339,7 +334,7 @@
 
     <header class="nav">
       <div class="wrap nav-inner">
-        <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true">B</span> Easy Browser-as-a-Service</a>
+        <a class="brand" href="#top">Easy Browser-as-a-Service</a>
         <nav class="links" aria-label="Sections">
           <a href="#problem">Problem</a>
           <a href="#embed">How it works</a>
