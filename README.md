@@ -69,7 +69,8 @@ curl -s localhost:8080/healthz
 # {"ok":true,"uptime":8,"sessions":{"active":0,"max":8},"browser":{"connected":true,"version":"Chrome/131.0.6778.204"},"tmp":"/tmp/rbas"}
 ```
 
-Then open <http://localhost:8080/demo.html>. Type a URL in the header and press **Go**; reload the
+Then open <http://localhost:8080/demo.html>. Type a URL in the header and press **Go**, or open
+`<http://localhost:8080/demo.html?src=https://example.com>` to start somewhere specific; reload the
 page and the session resumes where you left it.
 
 Useful flags:

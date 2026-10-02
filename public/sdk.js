@@ -159,8 +159,6 @@
 
     connect() {
       this.intentionalClose = false;
-      const stored = this.loadStoredState();
-      const url = this.getAttribute('src') || stored.url || 'about:blank';
       const scheme = this.serverOrigin.replace(/^http/, 'ws');
       const wsUrl = `${scheme}/ws`;
 
@@ -178,9 +176,13 @@
 
       socket.addEventListener('open', () => {
         console.log('[SDK] socket open');
+        // Resolve the URL and stored state as late as possible: hosts (and the
+        // demo's ?src= shortcut) set attributes after the element is parsed, and
+        // `src` must win over the remembered URL.
+        const stored = this.loadStoredState();
         this.send({
           type: 'init',
-          url,
+          url: this.getAttribute('src') || stored.url || 'about:blank',
           sessionId: stored.sessionId || null,
           viewport: this.viewport,
           state: { localStorage: stored.localStorage || {}, cookies: stored.cookies || [] },
