@@ -162,21 +162,22 @@
       .facts li { font-family: var(--mono); font-size: 12.5px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.03em; }
       .facts li::before { content: "\2736"; color: var(--pink); margin-right: 8px; }
 
-      /* taped-up photo */
-      figure.shot { margin: 0; position: relative; }
-      .shot-frame {
-        position: relative; border: 3px solid var(--white); background: var(--paper);
-        box-shadow: 8px 8px 0 var(--pink); transform: rotate(-1deg);
+      /* architecture diagram */
+      .diagram { margin: 46px 0 0; }
+      .diagram-scroll {
+        overflow-x: auto; border: 3px solid var(--white); background: #08080a;
+        padding: 12px; box-shadow: 8px 8px 0 var(--pink);
       }
-      .shot-frame::before, .shot-frame::after {
-        content: ""; position: absolute; top: -14px; width: 96px; height: 28px;
-        background: rgba(255, 45, 142, 0.85); z-index: 2;
-      }
-      .shot-frame::before { left: -18px; transform: rotate(-8deg); }
-      .shot-frame::after { right: -18px; transform: rotate(7deg); }
-      .shot-bar { display: flex; align-items: center; gap: 6px; padding: 9px 12px; border-bottom: 2px solid var(--line); }
-      .dot { width: 9px; height: 9px; background: var(--faint); }
-      .dot:nth-child(1) { background: var(--pink); }
+      .diagram-scroll svg { display: block; width: 100%; min-width: 760px; height: auto; }
+      .diagram text { font-family: var(--mono); }
+      .dg-box { fill: #0d0d10; stroke: var(--white); stroke-width: 2; }
+      .dg-inner { fill: #121216; stroke: var(--line); stroke-width: 2; }
+      .dg-title { fill: var(--white); font-size: 13px; font-weight: 700; }
+      .dg-sub { fill: #c9c9d0; font-size: 12px; }
+      .dg-dim { fill: var(--faint); font-size: 11.5px; }
+      .dg-pink { fill: var(--pink); font-size: 12.5px; font-weight: 700; }
+      .dg-flow { fill: none; stroke: var(--white); stroke-width: 2; }
+      .dg-flow-pink { fill: none; stroke: var(--pink); stroke-width: 3; }
       figcaption { font-size: 12.5px; color: var(--faint); margin-top: 18px; font-family: var(--mono); }
 
       /* cards */
@@ -383,20 +384,98 @@
             </p>
           </div>
 
-          <figure class="shot" style="margin-top: 46px">
-            <div class="shot-frame">
-              <div class="shot-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-              <img
-                src="assets/demo-screenshot.png"
-                width="1280"
-                height="830"
-                loading="lazy"
-                alt="The bundled demo page: a remote-browser element showing a Wikipedia article rendered by a remote Chromium, next to a live session log panel."
-              />
+          <figure class="diagram">
+            <div class="diagram-scroll">
+              <svg viewBox="0 0 980 500" role="img" aria-labelledby="dgTitle dgDesc" preserveAspectRatio="xMidYMid meet">
+                <title id="dgTitle">How the Chromium browser in the Docker image and the remote-browser element pass data and input back and forth</title>
+                <desc id="dgDesc">
+                  Diagram. On the left, your host page holds the remote-browser custom element with its
+                  shadow DOM canvas and input capture, plus host localStorage. In the middle, the Docker
+                  image runs one Node server and one master Chromium; each connection gets its own
+                  incognito browser context. Over a WebSocket, frames, session state and clipboard travel
+                  from the container to the element, while mouse, wheel, keyboard, paste and upload travel
+                  from the element into the container. On the right, the container's Chromium makes the
+                  real HTTPS requests to the target site, which is why there is no CORS or frame policy
+                  for the host page to satisfy.
+                </desc>
+                <defs>
+                  <marker id="ahW" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                    <path d="M0 0 L10 5 L0 10 z" fill="#f4f4f5" />
+                  </marker>
+                  <marker id="ahP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                    <path d="M0 0 L10 5 L0 10 z" fill="#ff2d8e" />
+                  </marker>
+                </defs>
+
+                <!-- host page -->
+                <rect class="dg-box" x="12" y="96" width="250" height="316" />
+                <text class="dg-title" x="28" y="124">YOUR PAGE (host origin)</text>
+                <rect class="dg-inner" x="28" y="140" width="218" height="160" />
+                <text class="dg-sub" x="42" y="164">&lt;remote-browser&gt;</text>
+                <text class="dg-dim" x="42" y="184">shadow DOM:</text>
+                <text class="dg-sub" x="42" y="208">&lt;canvas&gt; &#8592; frames</text>
+                <text class="dg-sub" x="42" y="228">input &#8594; mouse, keys</text>
+                <text class="dg-sub" x="42" y="248">clipboard, file picker</text>
+                <text class="dg-dim" x="42" y="276">one element = one session</text>
+                <rect class="dg-inner" x="28" y="312" width="218" height="84" />
+                <text class="dg-sub" x="42" y="336">host localStorage</text>
+                <text class="dg-dim" x="42" y="358">sessionId &#183; url</text>
+                <text class="dg-dim" x="42" y="378">cookies &#183; state</text>
+
+                <!-- docker image -->
+                <rect class="dg-box" x="372" y="20" width="316" height="460" />
+                <text class="dg-title" x="388" y="48">DOCKER IMAGE</text>
+                <rect class="dg-inner" x="388" y="64" width="284" height="62" />
+                <text class="dg-sub" x="402" y="88">node &#183; express &#183; ws</text>
+                <text class="dg-dim" x="402" y="110">/ws &#183; /upload &#183; /download/:id</text>
+                <rect class="dg-inner" x="388" y="142" width="284" height="168" />
+                <text class="dg-sub" x="402" y="166">master Chromium</text>
+                <text class="dg-dim" x="402" y="190">incognito context A</text>
+                <text class="dg-dim" x="402" y="210">incognito context B</text>
+                <text class="dg-dim" x="402" y="230">&#8230; one per connection</text>
+                <text class="dg-dim" x="402" y="258">CDP: Page.startScreencast</text>
+                <text class="dg-dim" x="402" y="278">Input.dispatchMouse/Key</text>
+                <text class="dg-dim" x="402" y="298">Network.getAllCookies</text>
+                <rect class="dg-inner" x="388" y="326" width="284" height="62" />
+                <text class="dg-sub" x="402" y="350">per-session files</text>
+                <text class="dg-dim" x="402" y="372">/tmp &#183; uploads, 5 min TTL</text>
+                <text class="dg-dim" x="388" y="418">no WebRTC &#183; no per-user browser</text>
+                <text class="dg-dim" x="388" y="440">stateless &#8212; nothing to persist</text>
+
+                <!-- target site -->
+                <rect class="dg-box" x="772" y="150" width="196" height="170" />
+                <text class="dg-title" x="786" y="176">legacy-crm.internal</text>
+                <text class="dg-dim" x="786" y="200">no CORS headers</text>
+                <text class="dg-dim" x="786" y="220">X-Frame-Options:</text>
+                <text class="dg-dim" x="786" y="238">DENY</text>
+                <text class="dg-dim" x="786" y="266">the app your iframe</text>
+                <text class="dg-dim" x="786" y="284">cannot reach</text>
+
+                <!-- websocket round trip -->
+                <path class="dg-flow" d="M372 170 H266" marker-end="url(#ahW)" />
+                <text class="dg-sub" x="319" y="196" text-anchor="middle">frames</text>
+                <text class="dg-sub" x="319" y="214" text-anchor="middle">state</text>
+                <text class="dg-sub" x="319" y="232" text-anchor="middle">clipboard</text>
+                <text class="dg-pink" x="319" y="266" text-anchor="middle">WebSocket</text>
+                <text class="dg-pink" x="319" y="284" text-anchor="middle">/ws</text>
+                <text class="dg-sub" x="319" y="322" text-anchor="middle">input</text>
+                <text class="dg-sub" x="319" y="340" text-anchor="middle">paste</text>
+                <text class="dg-sub" x="319" y="358" text-anchor="middle">upload</text>
+                <path class="dg-flow-pink" d="M262 382 H366" marker-end="url(#ahP)" />
+
+                <!-- container reaches the target -->
+                <path class="dg-flow" d="M688 186 H764" marker-end="url(#ahW)" />
+                <text class="dg-dim" x="728" y="176" text-anchor="middle">HTTP(S)</text>
+                <path class="dg-flow" d="M772 292 H696" marker-end="url(#ahW)" />
+                <text class="dg-dim" x="730" y="264" text-anchor="middle">HTML,</text>
+                <text class="dg-dim" x="730" y="280" text-anchor="middle">cookies</text>
+              </svg>
             </div>
             <figcaption>
-              Proof, not a mockup: the bundled demo (<code>/demo.html</code>) streaming a live
-              Wikipedia article through a remote Chromium, captured from the running service.
+              One master Chromium inside the Docker image, one incognito context per connection. Frames,
+              session state and clipboard come back over a WebSocket; mouse, wheel, keyboard, paste and
+              uploads go the other way. Your page never calls the vendor &#8212; the container does, which
+              is why there is no CORS header or frame policy for you to satisfy.
             </figcaption>
           </figure>
         </div>
