@@ -31,6 +31,12 @@ function handler(req, res) {
     res.end(body);
     return;
   }
+  if (url.pathname === '/favicon.ico') {
+    // Browsers ask for this unprompted; answering beats a console 404.
+    res.writeHead(204);
+    res.end();
+    return;
+  }
   if (url.pathname === '/hello.txt') {
     res.writeHead(200, {
       'Content-Type': 'text/plain; charset=utf-8',

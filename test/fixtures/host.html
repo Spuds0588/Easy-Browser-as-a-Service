@@ -12,11 +12,16 @@
     <script src="{{SERVICE_ORIGIN}}/sdk.js"></script>
     <remote-browser id="rb" src="{{TARGET_ORIGIN}}/target.html" server="{{SERVICE_ORIGIN}}"></remote-browser>
     <script>
-      // Test-only hooks: the e2e harness reads these from the host page.
-      window.__rb = document.getElementById('rb');
+      // Test-only hooks: the harness reads these from the host page.
+      // ?src= and ?key= let one harness drive several independent sessions.
+      const params = new URLSearchParams(location.search);
+      const element = document.getElementById('rb');
+      if (params.get('key')) element.setAttribute('storage-key', params.get('key'));
+      if (params.get('src')) element.setAttribute('src', params.get('src'));
+      window.__rb = element;
       window.__rbEvents = [];
       ['ready', 'navigate', 'download', 'clipboard'].forEach((type) => {
-        window.__rb.addEventListener(type, (event) => window.__rbEvents.push({ type, detail: event.detail }));
+        element.addEventListener(type, (event) => window.__rbEvents.push({ type, detail: event.detail }));
       });
     </script>
   </body>

@@ -26,11 +26,29 @@
     <div id="zone" aria-hidden="true"></div>
     <script>
       const LS = window.localStorage;
+
+      // Each tenant gets its own cookie name, storage values and palette, so a
+      // leaked cookie/storage value or a crossed screencast frame is visible.
+      const TENANT = (new URLSearchParams(location.search).get('tenant') || 'A').toUpperCase();
+      const PALETTE = {
+        A: { bg: '#f4f6fb', fg: '#10151f' },
+        B: { bg: '#0f2540', fg: '#e6ecf5' },
+        C: { bg: '#2b1a3d', fg: '#f2e9ff' },
+      };
+      const theme = PALETTE[TENANT] || PALETTE.A;
+      document.documentElement.style.background = theme.bg;
+      document.body.style.background = theme.bg;
+      document.body.style.color = theme.fg;
+      LS.setItem('tenant', TENANT);
+      LS.setItem('secret', TENANT + '-ONLY');
+      document.cookie = 'rbas_' + TENANT.toLowerCase() + '=1; path=/';
+
       const set = (k, v) => { LS.setItem(k, String(v)); render(); };
       const bump = (k) => set(k, parseInt(LS.getItem(k) || '0', 10) + 1);
 
       function render() {
         document.getElementById('log').textContent = [
+          'tenant=' + TENANT + ' secret=' + (LS.getItem('secret') || ''),
           'counter=' + (LS.getItem('counter') || 0),
           'clicks=' + (LS.getItem('clicks') || 0),
           'typed=' + (LS.getItem('typed') || ''),
@@ -40,7 +58,6 @@
         ].join('\n');
       }
 
-      document.cookie = 'rbas_test=seen; path=/';
       if (!LS.getItem('booted')) set('booted', Date.now());
       bump('clicks');
 

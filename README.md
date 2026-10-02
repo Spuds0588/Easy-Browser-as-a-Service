@@ -317,4 +317,13 @@ separately with `node test/idle-probe.js <port>`. The disconnect-grace check wai
 `E2E_GRACE_WAIT_MS` (20 s for a self-spawned service, 90 s when attaching to a deployment that uses
 the default 60 s grace) before giving up.
 
+`npm run test:multi` runs `test/multi-session.js`, which is about isolation rather than features:
+it starts the service with `MAX_SESSIONS=3` and drives two, then three, host pages at once, each on
+a different tenant target. It asserts distinct session ids, per-session frames (each tenant has its
+own palette), per-session keyboard routing, localStorage and cookie isolation, clipboard and
+upload/download payloads that never cross a session boundary, that a third session does not disturb
+an existing screencast, that a `MAX_SESSIONS+1` connection is refused with the documented capacity
+error, and that closing a session frees a slot for a replacement. Point it at a deployment with
+`E2E_SERVICE_ORIGIN` / `E2E_TARGET_ORIGIN` / `E2E_BIND=0.0.0.0` just like the e2e suite.
+
 It needs a browser to drive (system Chrome by default, or `PUPPETEER_EXECUTABLE_PATH`).

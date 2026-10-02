@@ -10,7 +10,8 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node server/index.js",
-    "test": "node test/e2e.js"
+    "test": "node test/e2e.js",
+    "test:multi": "node test/multi-session.js"
   },
   "dependencies": {
     "express": "^5.2.1",
