@@ -345,7 +345,16 @@ function reportAndExit() {
 function startService(port, extraEnv) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], {
-      env: { ...process.env, PORT: String(port), RBAS_KEY, ...extraEnv },
+      env: {
+        ...process.env,
+        PORT: String(port),
+        RBAS_KEY,
+        // Harnesses share one loopback address, so the default 1-session/IP cap
+        // would trip them; test:limits exercises the cap itself.
+        RBAS_MAX_SESSIONS_PER_IP: '0',
+        RBAS_SESSION_RATE: '0',
+        ...extraEnv,
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     children.push(child);

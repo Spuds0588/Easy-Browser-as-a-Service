@@ -156,7 +156,10 @@ Server→client: `ready`, `frame`, `url`, `state`, `clipboard`, `upload:request`
 | `RBAS_TRUSTED_ORIGINS` | — | Origins that may mint a token for themselves (no-backend pages) |
 | `RBAS_TRUSTED_NETWORKS` | — | IPs/CIDRs those origins must connect from; without it `Origin` alone is forgeable |
 | `RBAS_BROWSER_TOKEN_TTL_MS` | `900000` | Ceiling on trusted-origin tokens |
-| `RBAS_TRUST_PROXY` | `0` | Trusted proxy hops, for the IP allow-list behind a proxy |
+| `RBAS_TRUST_PROXY` | `0` | Trusted proxy hops, for the IP allow-list and per-IP limits behind a proxy |
+| `RBAS_MAX_SESSIONS_PER_IP` | `1` | Concurrent sessions from one address; a further `init` is refused with `code: "limit"` + `1013` (`0` disables) |
+| `RBAS_SESSION_RATE` | `20/min` | Token bucket of new sessions per address (`0` disables) |
+| `RBAS_ALLOWED_DOMAINS` | — (open) | Domains the remote browser may top-level navigate to; bare domain covers subdomains, wildcards accepted |
 | `MAX_SESSIONS` | `8` | Concurrent sessions; further `init`s are refused |
 | `RECONNECT_GRACE_MS` | `60000` | How long a dropped session's context is kept for resume |
 | `IDLE_TIMEOUT_MS` | `600000` | No input on a connected session → reaped |

@@ -18,6 +18,9 @@ const { BrowserManager } = require('./browser');
 const { FileStore, ROOT } = require('./files');
 const { SessionManager } = require('./sessions');
 const { evaluateBrowserTrust, parseNetworks, parseOrigins } = require('./trust');
+const { parseDomains, describeDomains } = require('./targets');
+const { parseRate, createRateLimiter } = require('./ratelimit');
+const { clientIpFromRequest } = require('./clientip');
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -29,6 +32,21 @@ const TRUSTED_ORIGINS = parseOrigins(process.env.RBAS_TRUSTED_ORIGINS);
 const TRUSTED_NETWORKS = parseNetworks(process.env.RBAS_TRUSTED_NETWORKS);
 const BROWSER_TOKEN_TTL_MS = parseDuration(process.env.RBAS_BROWSER_TOKEN_TTL_MS, 15 * 60 * 1000);
 
+// Resource policy. Default: one concurrent session per address (this is a
+// one-embedded-app product, not a tab farm) and an open target list.
+const TRUST_PROXY = (() => {
+  const value = Number(process.env.RBAS_TRUST_PROXY);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+})();
+const MAX_SESSIONS_PER_IP = (() => {
+  const raw = process.env.RBAS_MAX_SESSIONS_PER_IP;
+  if (raw === undefined || raw === '') return 1;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : 1;
+})();
+const SESSION_RATE = parseRate(process.env.RBAS_SESSION_RATE, { limit: 20, windowMs: 60_000 });
+const ALLOWED_DOMAINS = parseDomains(process.env.RBAS_ALLOWED_DOMAINS);
+
 const logger = {
   log: (...args) => console.log(...args),
   warn: (...args) => console.warn(...args),
@@ -39,7 +57,16 @@ async function main() {
   const auth = createAuth({ logger });
   const files = new FileStore({ logger });
   const browser = new BrowserManager({ logger });
-  const sessions = new SessionManager({ browser, files, auth, logger });
+  const sessionLimiter = createRateLimiter(SESSION_RATE);
+  const sessions = new SessionManager({
+    browser,
+    files,
+    auth,
+    targets: ALLOWED_DOMAINS,
+    sessionLimiter,
+    config: { maxSessionsPerIp: MAX_SESSIONS_PER_IP, trustProxy: TRUST_PROXY },
+    logger,
+  });
 
   await browser.launch();
 
@@ -48,8 +75,7 @@ async function main() {
 
   // Behind a proxy the socket address is the proxy's, so let the operator say
   // how many hops to trust. Wrong values make the IP allow-list meaningless.
-  const trustProxy = Number(process.env.RBAS_TRUST_PROXY || 0);
-  if (Number.isFinite(trustProxy) && trustProxy > 0) app.set('trust proxy', trustProxy);
+  if (TRUST_PROXY > 0) app.set('trust proxy', TRUST_PROXY);
 
   // Embeds live on other origins, so the HTTP bridges must be CORS-open.
   app.use((req, res, next) => {
@@ -77,6 +103,20 @@ async function main() {
   //   2. a trusted origin + trusted network (a browser with no backend) —
   //      short-lived token only. See server/trust.js for what each proves.
   app.post('/api/token', (req, res) => {
+    // Minting is cheap, but an open trusted-origin endpoint should not be a free
+    // flood target. Bucketed separately from session creation so a page that
+    // mints on load never eats into its owner's session budget.
+    if (sessionLimiter) {
+      const ip = clientIpFromRequest(req, TRUST_PROXY);
+      if (ip) {
+        const gate = sessionLimiter.check(`token:${ip}`);
+        if (!gate.allowed) {
+          res.setHeader('Retry-After', String(Math.max(1, Math.ceil((gate.retryAfterMs || 0) / 1000))));
+          return res.status(429).json({ error: 'rate_limited', retryAfterMs: gate.retryAfterMs });
+        }
+      }
+    }
+
     const provided = auth.tokenFromRequest(req);
     const ttl = parseDuration(req.query.ttl, auth.defaultTtlMs);
 
@@ -172,7 +212,7 @@ async function main() {
 
   wss.on('connection', (ws, req) => {
     logger.log(`[WS] client connected from ${req.socket.remoteAddress}`);
-    sessions.handleConnection(ws);
+    sessions.handleConnection(ws, req);
   });
 
   browser.onCrash = async () => {
@@ -189,6 +229,16 @@ async function main() {
     logger.log(
       `[BOOT] auth: enforcing signed tokens (key id ${auth.keyId}, ttl ${Math.round(auth.defaultTtlMs / 1000)}s)`
     );
+    logger.log(
+      `[BOOT] limits: max ${MAX_SESSIONS_PER_IP > 0 ? `${MAX_SESSIONS_PER_IP} concurrent session(s)/IP` : 'unlimited sessions/IP'}` +
+        `${sessionLimiter ? `, ${sessionLimiter.describe()}/IP` : ''}`
+    );
+    logger.log(`[BOOT] targets: ${describeDomains(ALLOWED_DOMAINS)}`);
+    if (ALLOWED_DOMAINS.invalid && ALLOWED_DOMAINS.invalid.length) {
+      logger.warn(
+        `[TARGETS] could not parse these RBAS_ALLOWED_DOMAINS entries and ignored them: ${ALLOWED_DOMAINS.invalid.join(', ')}`
+      );
+    }
     if (TRUSTED_ORIGINS.length) {
       logger.log(
         `[BOOT] auth: browsers may self-mint from ${TRUSTED_ORIGINS.join(', ')} ` +

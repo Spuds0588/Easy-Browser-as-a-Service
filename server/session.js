@@ -20,6 +20,7 @@ const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
 const { ROOT } = require('./files');
+const { isAllowedTarget } = require('./targets');
 
 const DEFAULTS = {
   quality: Number(process.env.SCREENCAST_QUALITY || 70),
@@ -31,11 +32,12 @@ const DEFAULTS = {
 };
 
 class RemoteSession extends EventEmitter {
-  constructor({ id, context, files, config = {}, logger = console }) {
+  constructor({ id, context, files, targets = null, config = {}, logger = console }) {
     super();
     this.id = id;
     this.context = context;
     this.files = files;
+    this.targets = targets;
     this.config = { ...DEFAULTS, ...config };
     this.logger = logger;
 
@@ -72,6 +74,7 @@ class RemoteSession extends EventEmitter {
     await this.client.send('DOM.enable').catch(() => {});
     await this.client.send('Log.enable').catch(() => {});
 
+    await this.enableTargetGuard();
     this.wireExposedFunctions();
     this.wireScreencast();
     this.wireNavigation();
@@ -88,6 +91,7 @@ class RemoteSession extends EventEmitter {
     // a confusing "Not attached to an active page" on top of the real error.
     this.navigated = await this.navigate(this.targetUrl);
     if (this.navigated) await this.startScreencast(vp);
+    else if (!this.targetAllowed) await this.startScreencast(vp); // stay on about:blank
 
     this.startStoragePoll();
     this.startDownloadPoll();
@@ -199,6 +203,51 @@ class RemoteSession extends EventEmitter {
         /* frame already superseded */
       }
     });
+  }
+
+  /**
+   * Guard top-level navigations that do NOT come through navigate(): link
+   * clicks and server-side redirects. Page.frameNavigated only fires after the
+   * commit, so the only place we can stop these is request interception. Scoped
+   * to main-frame navigation requests so an allowed app's own subresources and
+   * iframes still load. Skipped entirely when the target list is open.
+   */
+  async enableTargetGuard() {
+    if (!this.targets || this.targets.open || !this.page) return;
+    try {
+      await this.page.setRequestInterception(true);
+      this.page.on('request', (request) => {
+        let isMainNavigation = false;
+        try {
+          isMainNavigation = request.isNavigationRequest() && request.frame() === this.page.mainFrame();
+        } catch {
+          /* detached frame — treat as not-a-navigation */
+        }
+        if (isMainNavigation) {
+          const gate = isAllowedTarget(request.url(), this.targets);
+          if (!gate.allowed) {
+            this.rejectTarget(request.url(), gate);
+            return request.abort('blockedbyclient').catch(() => {});
+          }
+        }
+        return request.continue().catch(() => {});
+      });
+    } catch (err) {
+      this.logger.warn(`[SESSION ${this.id}] target guard unavailable: ${err.message}`);
+    }
+  }
+
+  /** Report a refused navigation to the client and keep the current page. */
+  rejectTarget(url, gate) {
+    this.logger.warn(`[SESSION ${this.id}] blocked navigation to ${url} (${gate.reason})`);
+    this.send({
+      type: 'error',
+      code: 'target_blocked',
+      blockedUrl: url,
+      reason: gate.reason,
+      message: `This browser is not allowed to load ${gate.host || url}.`,
+    });
+    this.emit('targetblocked', { url, reason: gate.reason, host: gate.host });
   }
 
   wireNavigation() {
@@ -363,6 +412,13 @@ class RemoteSession extends EventEmitter {
 
   async navigate(url, { reload = false } = {}) {
     if (!this.page) return false;
+    const gate = isAllowedTarget(url, this.targets);
+    this.targetAllowed = gate.allowed;
+    if (!gate.allowed) {
+      this.rejectTarget(url, gate);
+      this.navigated = false;
+      return false;
+    }
     this.targetUrl = url;
     try {
       this.logger.log(`[SESSION ${this.id}] navigate -> ${url}`);

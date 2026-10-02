@@ -376,6 +376,22 @@
             this.setStatus('Not authorized — this embed has no valid access token.', true, true);
             return;
           }
+          if (msg.code === 'limit') {
+            // Per-IP concurrency or new-session rate. Not a failure to retry in a
+            // tight loop; surface it so the host can tell the user to close one.
+            console.warn(`[SDK] session limit: ${msg.message}`);
+            this.setStatus(msg.message || 'You already have a session open.', true, true);
+            this.dispatchEvent(new CustomEvent('limit', { detail: { message: msg.message } }));
+            return;
+          }
+          if (msg.code === 'target_blocked') {
+            console.warn(`[SDK] navigation blocked: ${msg.message}`);
+            this.setStatus(msg.message || 'That address is not allowed.', true, true);
+            this.dispatchEvent(
+              new CustomEvent('blocked', { detail: { url: msg.blockedUrl, reason: msg.reason, message: msg.message } })
+            );
+            return;
+          }
           console.warn(`[SDK] server error: ${msg.message}`);
           this.setStatus(msg.message, true, true);
           return;

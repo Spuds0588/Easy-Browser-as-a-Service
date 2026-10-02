@@ -64,7 +64,7 @@
         "isAccessibleForFree": true,
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
         "author": { "@type": "Person", "name": "Corey Burns", "url": "https://github.com/Spuds0588" },
-        "keywords": "browser as a service, embed remote browser, X-Frame-Options, CORS, remote Chromium, web component, CDP screencast"
+        "keywords": "browser as a service, embed remote browser, X-Frame-Options, CORS, remote Chromium, web component, CDP screencast, rate limit, domain allow-list"
       }
     </script>
     <script type="application/ld+json">
@@ -143,6 +143,14 @@
             "acceptedAnswer": {
               "@type": "Answer",
               "text": "MAX_SESSIONS controls it and defaults to 8. Each session is one incognito browser context inside a single master Chromium process, so memory grows with sessions rather than with browser processes — budget roughly 1 GB of memory per concurrent session. A session beyond the limit is refused with Could not start session: capacity reached (N/N) — try again shortly. To run more than one session on the same host page, give each <remote-browser> its own storage-key attribute."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can it limit how many sessions a user opens, or what they browse to?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes, both are environment variables. RBAS_MAX_SESSIONS_PER_IP caps concurrent sessions per address and defaults to 1, and RBAS_SESSION_RATE bounds how fast new ones can be created; a refused session reports code: \"limit\". Set RBAS_ALLOWED_DOMAINS to the app or enterprise domains you are embedding (app.example.com also covers its subdomains) and the remote browser refuses to top-level navigate anywhere else, including redirects and link clicks. Empty or * leaves it open."
             }
           },
           {
@@ -839,8 +847,10 @@ RBAS_TRUSTED_NETWORKS=10.0.0.0/8
           <h3 style="margin-top: 44px">Talking to the element</h3>
           <pre><button class="copy" data-copy="s4" type="button">Copy</button><code id="s4"><span class="k">const</span> rb = document.querySelector(<span class="s">'remote-browser'</span>);
 
-rb.addEventListener(<span class="s">'ready'</span>, (e) =&gt; console.log(<span class="s">'session'</span>, e.detail.sessionId, e.detail.resumed));
-rb.addEventListener(<span class="s">'download'</span>, (e) =&gt; console.log(<span class="s">'user downloaded'</span>, e.detail.filename));
+rb.addEventListener(<span class="s">'ready'</span>, (e) =&gt;
+  console.log(<span class="s">'session'</span>, e.detail.sessionId, e.detail.resumed));
+rb.addEventListener(<span class="s">'download'</span>, (e) =&gt;
+  console.log(<span class="s">'user downloaded'</span>, e.detail.filename));
 
 rb.navigate(<span class="s">'https://legacy-crm.internal/accounts/42'</span>);
 rb.reload();                   <span class="c">// back to src</span>
@@ -871,6 +881,22 @@ rb.endSession();               <span class="c">// fires 'ended', no reconnect</s
                 Every session needs a short-lived HMAC-signed token minted from your server's
                 <code>RBAS_KEY</code>, so an anonymous visitor cannot open a browser. Tokens gate
                 <code>/ws</code>, uploads and downloads directly — no reverse proxy required.
+              </p>
+            </div>
+            <div class="card">
+              <h3>One session per user</h3>
+              <p>
+                A per-address cap — one concurrent session by default
+                (<code>RBAS_MAX_SESSIONS_PER_IP</code>) — with a new-session rate on top keeps one
+                embed per person and stops a page from minting browser contexts in a loop.
+              </p>
+            </div>
+            <div class="card">
+              <h3>You say what it can load</h3>
+              <p>
+                Pin the remote browser to your app or your enterprise domains with
+                <code>RBAS_ALLOWED_DOMAINS</code> (wildcards welcome). Redirects and link clicks are
+                stopped before they commit; leave it unset and it stays open.
               </p>
             </div>
             <div class="card">
@@ -986,7 +1012,9 @@ docker run -d --name rbas -p 8080:8080 \
               <p>
                 A token authenticates a caller, not a person, and it is checked when a session starts
                 rather than continuously. The browser also runs on your network, so keep token
-                lifetimes short, mint them per user, and restrict what the container can reach.
+                lifetimes short, mint them per user, and restrict what the container can reach. The
+                domain filter is a product guardrail, not a network boundary, and the per-IP limits
+                are only as good as <code>RBAS_TRUST_PROXY</code> behind a proxy.
               </p>
             </div>
             <div class="card">
@@ -1064,6 +1092,18 @@ docker run -d --name rbas -p 8080:8080 \
                 <code>Could not start session: capacity reached (N/N) — try again shortly</code>. To
                 run more than one session on the same host page, give each
                 <code>&lt;remote-browser&gt;</code> its own <code>storage-key</code> attribute.
+              </p>
+            </div>
+            <div class="faq-item">
+              <h3>Can it limit how many sessions a user opens, or what they browse to?</h3>
+              <p>
+                Yes, both are environment variables. <code>RBAS_MAX_SESSIONS_PER_IP</code> caps
+                concurrent sessions per address and defaults to 1, and <code>RBAS_SESSION_RATE</code>
+                bounds how fast new ones can be created; a refused session reports
+                <code>code: "limit"</code>. Set <code>RBAS_ALLOWED_DOMAINS</code> to the app or
+                enterprise domains you are embedding (<code>app.example.com</code> also covers its
+                subdomains) and the remote browser refuses to top-level navigate anywhere else,
+                including redirects and link clicks. Empty or <code>*</code> leaves it open.
               </p>
             </div>
             <div class="faq-item">

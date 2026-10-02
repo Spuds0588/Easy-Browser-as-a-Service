@@ -256,6 +256,43 @@ of hops you trust — otherwise the network list sees the proxy's address, not t
 Unauthorized requests get a `401` (or a `1008` WebSocket close) and never allocate a browser context.
 See [docs/SECURITY.md](docs/SECURITY.md) for what this does and does not protect against.
 
+### One session per user, by default
+
+The common embed is one app per person, so a second concurrent session from the same address is
+almost always a mistake — and it always costs memory. `RBAS_MAX_SESSIONS_PER_IP` caps it, and
+defaults to **1**. A further `init` from an address already at its cap is refused with
+`{ code: "limit" }` and a `1013` ("try again later") close, which the SDK surfaces as soon as the
+first session exists:
+
+```bash
+RBAS_MAX_SESSIONS_PER_IP=1     # default; 0 disables the cap entirely
+RBAS_SESSION_RATE=20/min       # new sessions per address, per window (0 disables)
+```
+
+`RBAS_SESSION_RATE` is a token bucket that stops a client from closing and immediately reopening to
+mint browser contexts in a loop; reconnects and deep-link resumes never count against it. Both
+controls count from the client IP, so behind a reverse proxy set `RBAS_TRUST_PROXY` or every user
+will look like the proxy and share one bucket.
+
+### What the remote browser may load
+
+The remote browser is a browser. Left open it can reach anything, so if you are embedding one app or
+one enterprise domain, say so and the service refuses everything else:
+
+```bash
+RBAS_ALLOWED_DOMAINS=app.example.com              # apex + every subdomain
+RBAS_ALLOWED_DOMAINS=*.corp.internal,acme.com     # wildcards are fine
+RBAS_ALLOWED_DOMAINS=*                            # (or unset) — open, anything loads
+```
+
+A bare domain matches its subdomains too, so one entry locks down a whole domain. The filter applies
+to **top-level navigations**: the initial `src`, the SDK's `navigate`, and — through request
+interception — link clicks and server-side redirects, which are stopped before they commit. A
+blocked navigation keeps the current page and reports `{ code: "target_blocked" }`; the allowed app's
+own subresources (CDNs, iframes) load normally. `about:blank` is always allowed and `file://`,
+`data:` and `chrome:` are refused even when the list is open, because a `file://` navigation is a
+read of the container's filesystem.
+
 ## Configuration reference
 
 Everything is environment variables with the defaults below; the Docker image, `docker-compose.yml`
@@ -274,6 +311,14 @@ and `fly.toml` set the ones that matter for deployment.
 | `RBAS_TRUSTED_NETWORKS` | — (empty) | Comma-separated IPs/CIDRs those origins must also be connecting from. Strongly recommended: `Origin` alone is forgeable by a non-browser client. |
 | `RBAS_BROWSER_TOKEN_TTL_MS` | `900000` (15 min) | Ceiling on tokens minted via the trusted-origin path. |
 | `RBAS_TRUST_PROXY` | `0` | Number of trusted proxy hops in front of the service. Non-zero makes `X-Forwarded-For` decide the client IP, so set it only when you really do have that many proxies. |
+
+### Resource policy
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `RBAS_MAX_SESSIONS_PER_IP` | `1` | Concurrent sessions allowed from one client address. `0` disables the cap. Enforced in addition to `MAX_SESSIONS`. |
+| `RBAS_SESSION_RATE` | `20/min` | Token bucket of *new* sessions per address (`N/sec\|min\|hour`). `0` disables. Reconnects and resumes never count. |
+| `RBAS_ALLOWED_DOMAINS` | — (open) | Domains the remote browser may top-level navigate to. Empty or `*` is open; a bare domain also matches its subdomains; wildcard entries accepted. |
 
 ### Sessions and reaping
 
@@ -411,6 +456,14 @@ injection and the WebSocket `init` gate.
 sends) and `DELETE /api/sessions/:id` both end a session immediately while a bare disconnect still
 waits out the reconnect grace — the service is started with a 60 s grace so the difference is real,
 not a timing coincidence.
+
+`npm run test:limits` runs `test/limits.js`: a unit matrix over the domain matcher (apex vs
+subdomain, wildcards, IP literals, `file://`, fail-closed on bad entries), the token-bucket rate
+limiter and the trusted-hop client-IP helper, then an integration pass against a service started
+with the defaults under test — a second concurrent session from one IP refused with `limit` and
+`1013`, the slot freed by `DELETE`, the new-session rate refusing a third creation, and the target
+filter allowing the fixture host while blocking a disallowed domain, `file://` and a redirect to a
+disallowed host.
 
 `npm test` runs `test/e2e.js`: it starts the service and two fixture origins, launches a real
 browser, and drives the product end to end — screencast frames painted to the canvas, mouse and

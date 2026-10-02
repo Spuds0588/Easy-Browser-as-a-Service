@@ -5,10 +5,13 @@
 #   ./install.sh --docker     # force Docker (docker compose up -d --build)
 #   ./install.sh --local      # force local Node (npm ci && npm start)
 #   ./install.sh --port 9000  # override the listening host port
+#   ./install.sh --allow-domains "app.example.com,*.corp.internal"
+#   ./install.sh --sessions-per-ip 1
+#   ./install.sh --session-rate 20/min
 set -euo pipefail
 
 usage() {
-  grep '^#' "$0" | sed 's/^# \{0,1\}//' | head -n 9
+  grep '^#' "$0" | sed 's/^# \{0,1\}//' | head -n 12
 }
 
 have_docker() {
@@ -66,12 +69,18 @@ find_chrome() {
 main() {
   local mode="auto"
   local port="${PORT:-8080}"
+  local allow_domains="${RBAS_ALLOWED_DOMAINS:-}"
+  local sessions_per_ip="${RBAS_MAX_SESSIONS_PER_IP:-}"
+  local session_rate="${RBAS_SESSION_RATE:-}"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --docker) mode="docker" ;;
       --local) mode="local" ;;
       --port) port="$2"; shift ;;
+      --allow-domains) allow_domains="$2"; shift ;;
+      --sessions-per-ip) sessions_per_ip="$2"; shift ;;
+      --session-rate) session_rate="$2"; shift ;;
       -h|--help) usage; return 0 ;;
       *) echo "unknown option: $1" >&2; return 1 ;;
     esac
@@ -85,6 +94,13 @@ main() {
   fi
 
   ensure_key
+
+  # Resource policy passes through to both the container and a local server.
+  if [[ -n "$sessions_per_ip" ]]; then export RBAS_MAX_SESSIONS_PER_IP="$sessions_per_ip"; fi
+  if [[ -n "$session_rate" ]]; then export RBAS_SESSION_RATE="$session_rate"; fi
+  if [[ -n "$allow_domains" ]]; then export RBAS_ALLOWED_DOMAINS="$allow_domains"; fi
+  echo "==> Limits: max ${RBAS_MAX_SESSIONS_PER_IP:-1} concurrent session(s)/IP, ${RBAS_SESSION_RATE:-20/min} new sessions"
+  echo "==> Targets: ${RBAS_ALLOWED_DOMAINS:-(open — the remote browser may load any domain)}"
 
   if [[ "$mode" == "docker" ]]; then
     if ! have_docker; then

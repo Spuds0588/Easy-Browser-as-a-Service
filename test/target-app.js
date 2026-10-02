@@ -32,6 +32,14 @@ function handler(req, res) {
     res.end(body);
     return;
   }
+  if (url.pathname === '/redirect') {
+    // Used by test/limits.js to prove the target guard catches server-side
+    // redirects (which never pass through the client navigate() path).
+    const to = url.searchParams.get('to') || '/';
+    res.writeHead(302, { Location: to, 'Cache-Control': 'no-store' });
+    res.end();
+    return;
+  }
   if (url.pathname === '/favicon.ico') {
     // Browsers ask for this unprompted; answering beats a console 404.
     res.writeHead(204);

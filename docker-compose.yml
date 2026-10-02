@@ -26,6 +26,14 @@ services:
       # Set to the number of trusted proxy hops when running behind one, or the
       # network allow-list above sees the proxy's address instead of the client's.
       RBAS_TRUST_PROXY: "${RBAS_TRUST_PROXY:-0}"
+      # Resource policy. Max concurrent sessions from one address (0 = unlimited;
+      # default 1 — one embedded app per user). New sessions per address, per
+      # window (0 disables). And what the remote browser may load at all: an
+      # empty or "*" value is open; otherwise a comma list of domains, where a
+      # bare domain also matches its subdomains (app.example.com, *.corp.internal).
+      RBAS_MAX_SESSIONS_PER_IP: "${RBAS_MAX_SESSIONS_PER_IP:-1}"
+      RBAS_SESSION_RATE: "${RBAS_SESSION_RATE:-20/min}"
+      RBAS_ALLOWED_DOMAINS: "${RBAS_ALLOWED_DOMAINS:-}"
       MAX_SESSIONS: "8"
       IDLE_TIMEOUT_MS: "600000"
       HIDDEN_TIMEOUT_MS: "180000"

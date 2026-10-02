@@ -23,6 +23,8 @@ HTTP and WebSocket traffic. There is nothing to provision: no database, no volum
 | Healthcheck `GET /healthz` | Liveness/readiness; the image already declares `HEALTHCHECK`. `/healthz` is left unauthenticated for exactly this reason. |
 | An `RBAS_KEY` secret | Signs the access tokens every session needs. Unset, the service generates one at boot and logs it (tokens then die with the process). Store it as a real secret. |
 | `RBAS_TRUSTED_ORIGINS` + `RBAS_TRUSTED_NETWORKS` (optional) | Only if you embed from a page that has no backend: they let that origin mint a token for itself. The network half is what constrains a non-browser client. Must be paired with `RBAS_TRUST_PROXY` when a proxy sits in front. |
+| `RBAS_MAX_SESSIONS_PER_IP` / `RBAS_SESSION_RATE` (optional) | Per-address resource policy; default one concurrent session per IP and `20/min` new. Raise or disable (`0`) for shared/office networks, and set `RBAS_TRUST_PROXY` correctly behind a proxy. |
+| `RBAS_ALLOWED_DOMAINS` (optional) | Lock an install to one app or enterprise domain (`app.example.com`, `*.corp.internal`). Empty/`*` is open. Filters top-level navigation only — not a network boundary. |
 | ~1 GB RAM per running session, plus Chrome's own footprint | Each session is an incognito context inside one master Chromium. |
 | No persistent volume | Sessions and tmp files are ephemeral by design. |
 
@@ -205,6 +207,8 @@ exposing it to the internet, and read the README's Access control section for mi
 | Symptom | Knob |
 | --- | --- |
 | `capacity reached (N/N)` in the SDK overlay | Raise `MAX_SESSIONS` (and the container's memory) or shorten the timeouts. |
+| `"You already have an active session"` overlay | A second concurrent session from the same IP hit `RBAS_MAX_SESSIONS_PER_IP`. Raise it (or `0`) for shared IPs. |
+| `Too many new sessions` overlay | `RBAS_SESSION_RATE` was exceeded; raise it or `0` to disable. |
 | Sessions reaped while users are reading | Raise `IDLE_TIMEOUT_MS` / `HIDDEN_TIMEOUT_MS`. |
 | Reloads stop resuming | Raise `RECONNECT_GRACE_MS` (default 60 s) or enable sticky sessions. |
 | Bandwidth/cost too high | Lower `SCREENCAST_QUALITY`, or `SCREENCAST_MAX_WIDTH`/`HEIGHT` (the element's size sets the real frame size). |

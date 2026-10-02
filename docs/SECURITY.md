@@ -23,8 +23,9 @@ What this does **not** do:
   per-user tokens in your own backend.
 - A token is checked when a session is **established**, not continuously, so a leaked token can be
   replayed for as long as the session it opened stays open.
-- There is no per-token or per-IP rate limit. A valid token can hold `MAX_SESSIONS` sessions open in a
-  loop, and can hammer `/api/token` without limit.
+- The built-in limits are per-IP, not per-user: they stop obvious abuse but a client can still rotate
+  IPs, and behind a proxy the IP is only as trustworthy as `RBAS_TRUST_PROXY`. Per-user quotas and
+  audit trails still belong in a reverse proxy.
 - The signing key is the whole ballgame: whoever holds `RBAS_KEY` can mint tokens. Store it as a
   secret, never ship it to a browser, and rotate it by restarting with a new value (which invalidates
   outstanding tokens).
@@ -60,6 +61,12 @@ The remote browser runs **inside your infrastructure**, so it can reach anything
 reach: internal admin panels, databases, `169.254.169.254` cloud metadata, `localhost` services.
 Authentication limits *who* can open a session, but it does not change *what that session can
 reach* — for anyone holding a valid token, a session is still a full SSRF primitive.
+
+`RBAS_ALLOWED_DOMAINS` narrows this, but do not mistake it for a network egress control. It filters
+**top-level navigations** only: a page that is itself allowed can still fetch internal endpoints as
+subresources, and an allow-list that includes an internal hostname hands that host to every session.
+Treat the filter as a product guardrail (keep users on your app, protect your compute budget), not a
+sandbox boundary — the network the browser runs on is the real one.
 
 Mitigations, in rough order of strength:
 
@@ -127,6 +134,9 @@ trusted input on either side — they are user-supplied text.
 | Control | Default | Effect |
 | --- | --- | --- |
 | `MAX_SESSIONS` | `8` | Concurrent sessions per instance; further connects are refused with an error. |
+| `RBAS_MAX_SESSIONS_PER_IP` | `1` | Concurrent sessions from one client address; a further `init` is refused with `code: "limit"` and a `1013` close. `0` disables. |
+| `RBAS_SESSION_RATE` | `20/min` | Token bucket of new sessions per address, so a client cannot close-and-reopen to mint contexts in a loop. `0` disables. |
+| `RBAS_ALLOWED_DOMAINS` | — (open) | Domains the remote browser may top-level navigate to; empty/`*` is open. |
 | `IDLE_TIMEOUT_MS` | `600000` | Connected-but-idle sessions are reaped (a connected client that is doing nothing still costs a Chromium context). |
 | `HIDDEN_TIMEOUT_MS` | `180000` | Hidden-tab sessions are reaped sooner. |
 | `RECONNECT_GRACE_MS` | `60000` | How long a disconnected context lingers — a window in which a leaked `sessionId` could still be resumed. |
@@ -134,15 +144,19 @@ trusted input on either side — they are user-supplied text.
 | `FILE_TTL_MS` | `300000` | Lifetime of bridged files. |
 | `SCREENCAST_QUALITY` / `SCREENCAST_MAX_*` | `70` / `1280×800` | Frame size and quality — the main bandwidth lever. |
 
-Unbounded work is possible: anyone who can connect can hold `MAX_SESSIONS` sessions open in a loop,
-pinning CPU and memory. There is no per-IP rate limit and no request-size limit on `/ws` beyond the
-server's 64 MB frame cap. If you run this multi-tenant, add rate limiting and auth at the proxy.
+The per-IP controls bound the common case, but they are not a complete defence: a client can rotate
+source addresses, and `MAX_SESSIONS` still caps the whole instance. `/ws` frames are capped at 64 MB
+and uploads at `MAX_UPLOAD`, but there is no request-*rate* limit on the socket itself. If you run
+this multi-tenant on a public network, add authentication, quotas and rate limiting at the proxy —
+and set `RBAS_TRUST_PROXY` correctly or the per-IP limits will bucket everyone behind the proxy
+together.
 
 ## Untested
 
 These areas were **not** exercised in this repo's testing and must not be assumed safe:
 
 - Deployment behind TLS or on a public URL (only local plain-HTTP containers were tested).
-- Rate limiting (there is none built in).
+- The built-in limits under real load, or the target filter against a page that navigates itself
+  via client-side routing and `history.pushState` (which is not a request and is not filtered).
 - Concurrent load / multi-tenant behaviour; the e2e suite drives one session at a time.
 - Fly.io deployment (`fly.toml` is configuration, not a verified deployment).

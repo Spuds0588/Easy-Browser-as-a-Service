@@ -14,22 +14,37 @@
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const { RemoteSession } = require('./session');
+const { clientIpFromRequest } = require('./clientip');
+
+// Like `Number(x || fallback)`, but 0 is a real value here (0 = unlimited).
+function intEnv(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : fallback;
+}
 
 const DEFAULTS = {
-  reconnectGraceMs: Number(process.env.RECONNECT_GRACE_MS || 60_000),
-  idleTimeoutMs: Number(process.env.IDLE_TIMEOUT_MS || 10 * 60_000),
-  hiddenTimeoutMs: Number(process.env.HIDDEN_TIMEOUT_MS || 3 * 60_000),
-  maxSessions: Number(process.env.MAX_SESSIONS || 8),
-  sweepMs: Number(process.env.SWEEP_MS || 15_000),
+  reconnectGraceMs: intEnv('RECONNECT_GRACE_MS', 60_000),
+  idleTimeoutMs: intEnv('IDLE_TIMEOUT_MS', 10 * 60_000),
+  hiddenTimeoutMs: intEnv('HIDDEN_TIMEOUT_MS', 3 * 60_000),
+  maxSessions: intEnv('MAX_SESSIONS', 8),
+  sweepMs: intEnv('SWEEP_MS', 15_000),
+  // Concurrent sessions from a single client address. 0 = unlimited. Default 1,
+  // because the product is one embedded app per user, not a tab farm.
+  maxSessionsPerIp: intEnv('RBAS_MAX_SESSIONS_PER_IP', 1),
+  // Trusted proxy hops, so the WS path resolves the real client IP like Express.
+  trustProxy: intEnv('RBAS_TRUST_PROXY', 0),
 };
 
 class Connection extends EventEmitter {
-  constructor(ws, logger = console) {
+  constructor(ws, logger = console, ip = null) {
     super();
     this.ws = ws;
     this.logger = logger;
     this.closed = false;
     this.remote = ws._socket && ws._socket.remoteAddress;
+    this.ip = ip; // normalised client address (honours trust proxy)
     ws.on('close', () => {
       this.closed = true;
       this.emit('close', this);
@@ -57,10 +72,12 @@ class Connection extends EventEmitter {
 }
 
 class SessionManager {
-  constructor({ browser, files, auth = null, config = {}, logger = console }) {
+  constructor({ browser, files, auth = null, targets = null, sessionLimiter = null, config = {}, logger = console }) {
     this.browser = browser;
     this.files = files;
     this.auth = auth;
+    this.targets = targets;
+    this.sessionLimiter = sessionLimiter;
     this.config = { ...DEFAULTS, ...config };
     this.logger = logger;
     this.sessions = new Map();
@@ -70,15 +87,30 @@ class SessionManager {
   }
 
   get stats() {
-    return { active: this.sessions.size, max: this.config.maxSessions };
+    return {
+      active: this.sessions.size,
+      max: this.config.maxSessions,
+      maxPerIp: this.config.maxSessionsPerIp,
+    };
+  }
+
+  /** Live (not closed) sessions owned by one client address. */
+  countByIp(ip) {
+    if (!ip) return 0;
+    let count = 0;
+    for (const session of this.sessions.values()) {
+      if (!session.closed && session.ip === ip) count += 1;
+    }
+    return count;
   }
 
   /**
    * Entry point for a new WebSocket. The first message must be `init`.
    * Returns a cleanup function.
    */
-  handleConnection(ws) {
-    const connection = new Connection(ws, this.logger);
+  handleConnection(ws, req = null) {
+    const ip = clientIpFromRequest(req, this.config.trustProxy);
+    const connection = new Connection(ws, this.logger, ip);
     let session = null;
     let bootstrapping = false;
 
@@ -110,9 +142,21 @@ class SessionManager {
         try {
           session = await this.initSession(msg, connection);
         } catch (err) {
-          this.logger.error(`[SESSIONS] init failed: ${err.stack || err.message}`);
-          connection.send(JSON.stringify({ type: 'error', message: `Could not start session: ${err.message}` }));
-          connection.close(1011, 'init failed');
+          const limited = err && err.code === 'limit';
+          if (limited) {
+            this.logger.warn(`[SESSIONS] rejecting ${connection.ip || 'unknown'}: ${err.message}`);
+          } else {
+            this.logger.error(`[SESSIONS] init failed: ${err.stack || err.message}`);
+          }
+          connection.send(
+            JSON.stringify({
+              type: 'error',
+              code: limited ? 'limit' : undefined,
+              message: limited ? err.message : `Could not start session: ${err.message}`,
+            })
+          );
+          // 1013 = Try Again Later; 1011 = internal error.
+          connection.close(limited ? 1013 : 1011, limited ? 'session limit' : 'init failed');
         } finally {
           bootstrapping = false;
         }
@@ -151,8 +195,40 @@ class SessionManager {
       return existing;
     }
 
+    // Per-IP concurrency: the product is one embedded app per person, so a
+    // second concurrent context from the same address is almost always a
+    // mistake — and it always costs real memory. Checked before the global cap
+    // so the client gets an actionable reason rather than "server full".
+    const ip = connection.ip || null;
+    if (this.config.maxSessionsPerIp > 0 && ip) {
+      const mine = this.countByIp(ip);
+      if (mine >= this.config.maxSessionsPerIp) {
+        const err = new Error(
+          this.config.maxSessionsPerIp === 1
+            ? 'You already have an active session. Close it before starting another.'
+            : `Too many active sessions from your address (${mine}/${this.config.maxSessionsPerIp}).`
+        );
+        err.code = 'limit';
+        throw err;
+      }
+    }
+
     if (this.sessions.size >= this.config.maxSessions) {
       throw new Error(`capacity reached (${this.sessions.size}/${this.config.maxSessions}) — try again shortly`);
+    }
+
+    // New-session rate: stops close-then-reinit churn from minting contexts in a
+    // tight loop. Reconnects and resumes never reach here, so this only bounds
+    // genuinely new sessions.
+    if (this.sessionLimiter && ip) {
+      const gate = this.sessionLimiter.check(ip);
+      if (!gate.allowed) {
+        const err = new Error(
+          `Too many new sessions — try again in ${Math.max(1, Math.ceil((gate.retryAfterMs || 0) / 1000))}s.`
+        );
+        err.code = 'limit';
+        throw err;
+      }
     }
 
     const id = `sess_${crypto.randomBytes(8).toString('hex')}`;
@@ -161,9 +237,11 @@ class SessionManager {
       id,
       context,
       files: this.files,
+      targets: this.targets,
       config: msg.config || {},
       logger: this.logger,
     });
+    session.ip = ip;
 
     this.wireSession(session);
     this.sessions.set(id, session);
@@ -249,6 +327,7 @@ class SessionManager {
 
   sweepIdle() {
     const now = Date.now();
+    if (this.sessionLimiter) this.sessionLimiter.prune(now);
     for (const session of this.sessions.values()) {
       if (session.closed || !session.sink) continue; // only reap attached sessions
       const idleFor = now - session.lastActivity;
@@ -261,6 +340,7 @@ class SessionManager {
 
   async shutdown() {
     clearInterval(this.sweeper);
+    if (this.sessionLimiter) this.sessionLimiter.buckets.clear();
     for (const timer of this.reapTimers.values()) clearTimeout(timer);
     this.reapTimers.clear();
     await Promise.all([...this.sessions.values()].map((session) => session.close().catch(() => {})));

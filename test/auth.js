@@ -125,6 +125,10 @@ function startService() {
         ...process.env,
         PORT: String(PORT),
         RBAS_KEY: KEY,
+        // The auth suite may open a couple of sessions from loopback; leave the
+        // per-IP cap and new-session rate out of its way.
+        RBAS_MAX_SESSIONS_PER_IP: '0',
+        RBAS_SESSION_RATE: '0',
         // The no-backend path: this origin may mint for itself, from loopback.
         RBAS_TRUSTED_ORIGINS: 'http://trusted.example',
         RBAS_TRUSTED_NETWORKS: '127.0.0.0/8,::1',

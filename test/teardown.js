@@ -117,6 +117,10 @@ function startService() {
         ...process.env,
         PORT: String(PORT),
         RBAS_KEY,
+        // This suite opens sessions from one address to test teardown; keep the
+        // per-IP cap and new-session rate disabled.
+        RBAS_MAX_SESSIONS_PER_IP: '0',
+        RBAS_SESSION_RATE: '0',
         RECONNECT_GRACE_MS: String(GRACE_MS),
         RBAS_TMP_DIR: path.join(os.tmpdir(), 'rbas-teardown'),
         PUPPETEER_EXECUTABLE_PATH: resolveExecutablePath() || '',

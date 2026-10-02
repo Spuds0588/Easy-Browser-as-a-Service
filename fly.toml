@@ -16,6 +16,15 @@ primary_region = "iad"
   # fly secrets; RBAS_TRUSTED_NETWORKS needs the private network CIDR.
   #   fly secrets set RBAS_TRUSTED_ORIGINS=https://app.example.com
   #   fly secrets set RBAS_TRUSTED_NETWORKS=10.0.0.0/8
+  # Resource policy. One concurrent session per address by default; set to 0 for
+  # unlimited, or raise it for shared/office IPs. RBAS_SESSION_RATE bounds how
+  # fast one address can create new sessions ("20/min"; 0 disables).
+  RBAS_MAX_SESSIONS_PER_IP = "1"
+  RBAS_SESSION_RATE = "20/min"
+  # What the remote browser may load: empty or "*" is open. To lock an install to
+  # one app or an enterprise domain, set e.g. RBAS_ALLOWED_DOMAINS="app.example.com"
+  # (a bare domain also covers its subdomains). Prefer fly secrets for this.
+  #   fly secrets set RBAS_ALLOWED_DOMAINS=app.example.com,*.corp.internal
   # 2GB of RAM must host one Chrome plus every incognito context in it.
   MAX_SESSIONS = "4"
   # Aggressive reaping keeps serverless containers cheap.

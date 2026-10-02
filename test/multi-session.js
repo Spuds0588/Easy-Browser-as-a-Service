@@ -378,7 +378,16 @@ function reportAndExit() {
 function startService(port, extraEnv) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], {
-      env: { ...process.env, PORT: String(port), RBAS_KEY, ...extraEnv },
+      env: {
+        ...process.env,
+        PORT: String(port),
+        RBAS_KEY,
+        // This suite deliberately opens several sessions from one address, so
+        // it must disable the per-IP cap; test:limits covers that cap.
+        RBAS_MAX_SESSIONS_PER_IP: '0',
+        RBAS_SESSION_RATE: '0',
+        ...extraEnv,
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     children.push(child);
